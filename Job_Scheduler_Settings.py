@@ -17,8 +17,13 @@ import pyperclip
 import pandas as pd
 import pathlib as pl
 
+if getattr(sys, 'frozen', False):
+    application_path = sys.executable
+else:
+    application_path = __file__
+
 # Global Variable declaration
-curr_dir = os.path.dirname(os.path.abspath(__file__))
+curr_dir = os.path.dirname(os.path.abspath(application_path))
 main_dir = os.path.dirname(curr_dir)
 joblogsdir = os.path.join(main_dir, '05_Job_Logs')
 joblogsexpdir = os.path.join(main_dir, '06_Job_Logs_Export')
