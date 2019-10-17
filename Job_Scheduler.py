@@ -18,6 +18,7 @@ import pandas as pd
 import datetime
 import traceback
 import copy
+import sys
 
 if getattr(sys, 'frozen', False):
     application_path = sys.executable

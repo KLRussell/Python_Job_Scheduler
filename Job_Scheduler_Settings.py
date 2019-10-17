@@ -16,6 +16,7 @@ import copy
 import pyperclip
 import pandas as pd
 import pathlib as pl
+import sys
 
 if getattr(sys, 'frozen', False):
     application_path = sys.executable
