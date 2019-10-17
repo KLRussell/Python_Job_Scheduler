@@ -9,7 +9,7 @@ from time import sleep
 from multiprocessing import Process
 from multiprocessing.managers import BaseManager
 from subprocess import Popen, PIPE
-from Settings import next_run_date
+from Job_Scheduler_Settings import next_run_date
 
 import smtplib
 import zipfile
