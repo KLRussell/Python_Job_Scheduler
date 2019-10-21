@@ -9,7 +9,9 @@ from Global import CryptHandle
 from Global import ShelfHandle
 from math import floor
 
+# This is needed when compiling .Exe since compiler has issues including hidden imported modules (Only for TkCalender)
 import babel.numbers
+
 import smtplib
 import datetime
 import os
