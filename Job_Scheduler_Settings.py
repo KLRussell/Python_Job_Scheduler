@@ -9,6 +9,7 @@ from Global import CryptHandle
 from Global import ShelfHandle
 from math import floor
 
+import babel.numbers
 import smtplib
 import datetime
 import os
@@ -1224,6 +1225,9 @@ class JobListGUI:
         self.fill_gui()
 
     def fill_gui(self, select_prev_item=False):
+        if not select_prev_item:
+            global_objs['Local_Settings'].read_shelf()
+
         self.configs = global_objs['Local_Settings'].grab_item('Job_Configs')
 
         if self.job_list_box.size() > 0:
@@ -1292,6 +1296,7 @@ class JobListGUI:
 
             if os.path.exists(os.path.join(joblogsdir, '%s.bak' % job_name)):
                 self.job_log = ShelfHandle(os.path.join(joblogsdir, job_name))
+                self.job_log.read_shelf()
 
                 if self.job_log and self.job_log.grab_list():
                     self.job_log_button.configure(state=NORMAL)
@@ -1649,6 +1654,8 @@ class JobLogGUI:
         hist_date = str(self.dates_list_box.get(self.dates_list_sel))
         self.job_log.del_item(hist_date)
         self.dates_list_box.delete(self.dates_list_sel)
+        self.job_log.shelf_write()
+        global_objs['Local_Settings'].read_shelf()
         self.destroy = True
         self.class_obj.fill_gui(True)
 
@@ -1680,6 +1687,8 @@ def add_setting(setting_list, val, key, encrypt=True):
 
     if val:
         global_objs[setting_list].add_item(key=key, val=val, encrypt=encrypt)
+
+    global_objs[setting_list].write_shelf()
 
 
 def next_date(start_date, days):

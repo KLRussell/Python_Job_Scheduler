@@ -10,6 +10,7 @@ from multiprocessing import Process
 from multiprocessing.managers import BaseManager
 from subprocess import Popen, PIPE
 from Job_Scheduler_Settings import next_run_date
+from Job_Scheduler_Settings import add_setting
 
 import smtplib
 import zipfile
@@ -202,6 +203,7 @@ class JobConfig(object):
         self.asql.connect('alch')
         self.job_config = job_config
         self.job_log = ShelfHandle(os.path.join(joblogsdir, job_config['Job_Name']))
+        self.job_log.read_shelf()
 
     def close_job(self):
         i = -1
@@ -234,6 +236,7 @@ class JobConfig(object):
 
         log_items.append([datetime.datetime.now().__format__("%I:%M:%S %p"), log_item])
         self.job_log.add_item(key=datetime.datetime.now().__format__("%Y%m%d"), val=log_items, encrypt=False)
+        self.job_log.write_shelf()
 
     def start_job(self):
         self.job_log_item("Starting Job '{0}'".format(self.job_config['Job_Name']))
@@ -393,6 +396,7 @@ class JobConfig(object):
             self.sub_error.append(err_code)
 
     def send_email(self, error_msg=None):
+        email_trys = -1
         self.list_chksum()
         self.check_lists()
 
@@ -409,15 +413,23 @@ class JobConfig(object):
         obj = Email(job_config=self.job_config, job_results=package, error_msg=error_msg)
         obj.email_connect()
 
-        try:
-            obj.package_email()
-            obj.email_send()
-            self.job_log_item("Email has been successfully sent")
-        except:
-            self.job_log_item("Email failed to be sent")
-        finally:
-            obj.email_close()
-            del obj
+        while email_trys < 4:
+            email_trys += 1
+
+            try:
+                obj.package_email()
+                obj.email_send()
+                self.job_log_item("Email has been successfully sent")
+                email_trys = 5
+            except Exception as e:
+                self.job_log_item("Job '{0}' failed e-mail sending [ECode {1}] - {2}"
+                                  .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
+                global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
+                sleep(5)
+                pass
+            finally:
+                obj.email_close()
+                del obj
 
     def close_conn(self):
         if self.asql:
@@ -442,21 +454,12 @@ def check_settings():
         return True
 
 
-def add_setting(setting_list, val, key, encrypt=True):
-    assert (key and setting_list)
-
-    global_objs[setting_list].del_item(key)
-
-    if val:
-        global_objs[setting_list].add_item(key=key, val=val, encrypt=encrypt)
-
-
 def repackage_freq(line, next_run):
     job_schedule = copy.deepcopy(config['Job_Schedule'])
     freq_list, days_of_week, freq_start_dt_list, freq_missed_run_list, prev_run_list, next_run_list = zip(*job_schedule)
     prev_run_list = list(prev_run_list)
     next_run_list = list(next_run_list)
-    prev_run_list[line] = copy.copy(next_run_list[line])
+    prev_run_list[line] = datetime.datetime.now()
     next_run_list[line] = next_run
     config['Job_Schedule'] = zip(freq_list, days_of_week, freq_start_dt_list, freq_missed_run_list, prev_run_list,
                                  next_run_list)
@@ -559,6 +562,7 @@ if __name__ == '__main__':
             global_objs['Event_Log'].write_log("Job Scheduler is now sniffing for Jobs to execute")
 
             while 1 != 0:
+                global_objs['Local_Settings'].read_shelf()
                 configs = global_objs['Local_Settings'].grab_item('Job_Configs')
 
                 if configs:
