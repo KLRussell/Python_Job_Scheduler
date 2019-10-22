@@ -609,7 +609,7 @@ if __name__ == '__main__':
                             if watch_jobs(my_job[0], my_job[1], my_job[2]):
                                 jobs.remove(my_job)
 
-                sleep(14)
+                sleep(10)
         except:
             global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
     else:
