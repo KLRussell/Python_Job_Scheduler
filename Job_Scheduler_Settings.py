@@ -1062,12 +1062,8 @@ class JobGUI:
             new_config['Job_List'] = zip(self.sub_job_list, self.sub_job_type_list)
 
             if self.job:
-                print('Replacing!!')
-                print(new_config)
                 configs[line_num] = new_config
             else:
-                print('Inserting!!')
-                print(new_config)
                 configs.append(new_config)
 
             add_setting('Local_Settings', configs, 'Job_Configs', False)

@@ -166,6 +166,7 @@ class ShelfHandle:
         self.shelf_data.clear()
         self.rem_keys.clear()
         self.add_keys.clear()
+
         shelf = shelve_lock.open(self.file)
 
         if len(shelf) > 0:

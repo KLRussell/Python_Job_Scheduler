@@ -8,7 +8,7 @@ from email import encoders
 from time import sleep
 from multiprocessing import Process
 from multiprocessing.managers import BaseManager
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, CREATE_NEW_CONSOLE
 from Job_Scheduler_Settings import next_run_date
 from Job_Scheduler_Settings import add_setting
 
@@ -208,6 +208,7 @@ class JobConfig(object):
     def close_job(self):
         i = -1
         fconfig = None
+        global_objs['Local_Settings'].read_shelf()
         my_configs = global_objs['Local_Settings'].grab_item('Job_Configs')
 
         for my_config in my_configs:
@@ -282,16 +283,16 @@ class JobConfig(object):
                         proc = Popen(['powershell.exe', "cscript '{0}' {1}".format(sub_job[0], sub_job[1])], stdin=PIPE,
                                      stdout=PIPE, stderr=PIPE)
                     elif ext == '.exe':
-                        proc = Popen('{0} {1}'.format(sub_job[0], sub_job[1]), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                        proc = Popen('{0} {1}'.format(sub_job[0], sub_job[1]), stdin=PIPE, stdout=PIPE)
                     else:
                         proc = Popen(['powershell.exe', "'{0}' {1}".format(sub_job[0], sub_job[1])],
                                      stdin=PIPE, stdout=PIPE, stderr=PIPE)
 
-                    proc.wait()
+                    stdout, stderr = proc.communicate()
 
                     if proc:
-                        for line in proc.stderr:
-                            lines.append(line.decode("utf-8").rstrip())
+                        for line in stderr.decode("utf-8").split('\n'):
+                            lines.append(line.rstrip())
 
                         if len(lines) > 0:
                             self.job_log_item("{0} '{1}' failed [ECode {2}] - {3}"
@@ -507,11 +508,12 @@ def watch_jobs(job_thread, job_obj, job_timeout):
     if len(stop_job_list) > 0:
         for stop_job_name in stop_job_list:
             if stop_job_name == job_obj.job_name().lower():
+                global_objs['Event_Log'].write_log("Job '{0}' was forcebly requested to be stopped by GUI"
+                                                   .format(job_obj.job_name()))
+
                 if job_thread.is_alive():
                     job_thread.terminate()
 
-                global_objs['Event_Log'].write_log("Job '{0}' was forcebly requested to be stopped by GUI"
-                                                   .format(job_obj.job_name()))
                 jw = Process(target=exec_email, args=[job_obj,
                                                       "Failed execution because it was requested to be stopped by GUI"])
                 jw.start()
@@ -528,20 +530,22 @@ def watch_jobs(job_thread, job_obj, job_timeout):
         global_objs['Event_Log'].write_log("Job '{0}' Completed!".format(job_obj.job_name()))
         return True
     elif job_thread.exitcode is not None:
+        global_objs['Event_Log'].write_log("Job '{0}' failed execution because it ran into Error Code {1}"
+                                           .format(job_obj.job_name(), job_thread.exitcode))
+
         if job_thread.is_alive():
             job_thread.terminate()
 
-        global_objs['Event_Log'].write_log("Job '{0}' failed execution because it ran into Error Code {1}"
-                                           .format(job_obj.job_name(), job_thread.exitcode))
         jw = Process(target=exec_email, args=[job_obj, "Failed execution because it ran into an Error Code %s"
                                               % job_thread.exitcode])
         jw.start()
         return True
     elif job_timeout and job_timeout < datetime.datetime.now():
+        global_objs['Event_Log'].write_log("Failed execution because of Time-Out!")
+
         if job_thread.is_alive():
             job_thread.terminate()
 
-        global_objs['Event_Log'].write_log("Failed execution because of Time-Out!")
         jw = Process(target=exec_email, args=[job_obj, "Timed-Out while processing"])
         jw.start()
         return True
@@ -601,7 +605,7 @@ if __name__ == '__main__':
                             if watch_jobs(my_job[0], my_job[1], my_job[2]):
                                 jobs.remove(my_job)
 
-                sleep(15)
+                sleep(14)
         except:
             global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
     else:
