@@ -8,7 +8,7 @@ from email import encoders
 from time import sleep
 from multiprocessing import Process
 from multiprocessing.managers import BaseManager
-from subprocess import Popen, PIPE, CREATE_NEW_CONSOLE
+from subprocess import Popen, PIPE
 from Job_Scheduler_Settings import next_run_date
 from Job_Scheduler_Settings import add_setting
 
@@ -22,6 +22,7 @@ import copy
 import sys
 
 if getattr(sys, 'frozen', False):
+    from multiprocessing import freeze_support
     application_path = sys.executable
 else:
     application_path = __file__
@@ -552,6 +553,9 @@ def watch_jobs(job_thread, job_obj, job_timeout):
 
 
 if __name__ == '__main__':
+    if getattr(sys, 'frozen', False):
+        freeze_support()
+
     global_objs['Event_Log'].write_log("Initializing Job Scheduler Settings")
 
     if check_settings():
