@@ -32,6 +32,7 @@ main_dir = os.path.dirname(curr_dir)
 joblogsdir = os.path.join(main_dir, '05_Job_Logs')
 joblogsexpdir = os.path.join(main_dir, '06_Job_Logs_Export')
 global_objs = grabobjs(main_dir, 'Job_Scheduler')
+icon_path = os.path.join(curr_dir, '%s.ico' % os.path.splitext(os.path.basename(application_path))[0])
 
 
 class SettingsGUI:
@@ -50,6 +51,7 @@ class SettingsGUI:
         self.email_upass_obj = global_objs['Settings'].grab_item('Email_Pass')
         self.asql = global_objs['SQL']
         self.main = Tk()
+        self.main.iconbitmap(icon_path)
 
         # GUI Variables
         self.server = StringVar()
@@ -340,6 +342,7 @@ class JobGUI:
         self.job = job
         self.class_obj = class_obj
         self.destroy = False
+        self.main.iconbitmap(icon_path)
 
         if job:
             self.title = 'Modify Existing Job'
@@ -1141,6 +1144,7 @@ class JobListGUI:
     def __init__(self, root):
         self.main = Toplevel(root)
         self.configs = global_objs['Local_Settings'].grab_item('Job_Configs')
+        self.main.iconbitmap(icon_path)
 
         self.prev_run = StringVar()
         self.next_run = StringVar()
@@ -1491,6 +1495,7 @@ class JobLogGUI:
         self.job_name = job_name
         self.class_obj = class_obj
         self.destroy = False
+        self.main.iconbitmap(icon_path)
 
         self.main.bind('<Destroy>', self.gui_cleanup)
 
