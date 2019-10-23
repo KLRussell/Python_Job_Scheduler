@@ -23,8 +23,10 @@ import sys
 
 if getattr(sys, 'frozen', False):
     application_path = sys.executable
+    ico_dir = sys._MEIPASS
 else:
     application_path = __file__
+    ico_dir = os.path.dirname(__file__)
 
 # Global Variable declaration
 curr_dir = os.path.dirname(os.path.abspath(application_path))
@@ -32,7 +34,7 @@ main_dir = os.path.dirname(curr_dir)
 joblogsdir = os.path.join(main_dir, '05_Job_Logs')
 joblogsexpdir = os.path.join(main_dir, '06_Job_Logs_Export')
 global_objs = grabobjs(main_dir, 'Job_Scheduler')
-icon_path = os.path.join(curr_dir, '%s.ico' % os.path.splitext(os.path.basename(application_path))[0])
+icon_path = os.path.join(ico_dir, '%s.ico' % os.path.splitext(os.path.basename(application_path))[0])
 
 
 class SettingsGUI:
