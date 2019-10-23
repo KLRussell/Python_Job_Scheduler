@@ -295,15 +295,15 @@ class JobConfig(object):
                         for line in stderr.decode("utf-8").split('\n'):
                             lines.append(line.rstrip())
 
-                        if len(lines) > 0:
+                        if proc.returncode == 0:
+                            self.sub_error.append(None)
+                            self.sub_end_time.append(datetime.datetime.now())
+                        else:
                             self.job_log_item("{0} '{1}' failed [ECode {2}] - {3}"
                                               .format(sub_job_type, os.path.basename(sub_job[0]), proc.returncode,
                                                       '. '.join(lines)))
                             self.sub_error.append(proc.returncode)
                             self.sub_end_time.append(None)
-                        else:
-                            self.sub_error.append(None)
-                            self.sub_end_time.append(datetime.datetime.now())
 
                     self.sub_job_file.append(None)
                 else:
