@@ -21,6 +21,9 @@ import base64
 import random
 import string
 
+# Include this immport of dumb from dbm_lock for pyinstaller's Exe compiler
+from dbm_lock import dumb
+
 
 def grabobjs(scriptdir, filename=None):
     if scriptdir and os.path.exists(scriptdir):
