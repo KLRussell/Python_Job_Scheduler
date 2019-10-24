@@ -69,8 +69,8 @@ class Email:
         duration = end_time - start_time
         duration_in_s = duration.total_seconds()
         days = int(divmod(duration_in_s, 86400)[0])
-        hours = int(divmod(duration_in_s, 3600)[0])
-        minutes = int(divmod(duration_in_s, 60)[0])
+        hours = int(divmod(duration_in_s, 3600)[0] % 24)
+        minutes = int(divmod(duration_in_s, 60)[0] % 60)
         seconds = int(duration.seconds % 60)
 
         date_list = []
