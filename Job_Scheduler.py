@@ -72,7 +72,7 @@ class Email:
         hours = int(divmod(duration_in_s, 3600)[0] % 24)
         minutes = int(divmod(duration_in_s, 60)[0] % 60)
         seconds = int(duration.seconds % 60)
-        microseconds = int(duration.microseconds % 60)
+        milliseconds = int(divmod(duration.microseconds, 1000)[0] % 1000)
 
         date_list = []
 
@@ -100,11 +100,11 @@ class Email:
             else:
                 date_list.append('{0} Seconds'.format(seconds))
 
-        if len(date_list) < 1 and microseconds > 0:
-            if seconds == 1:
-                date_list.append('{0} Micro Second'.format(microseconds))
+        if len(date_list) < 1 and milliseconds > 0:
+            if milliseconds == 1:
+                date_list.append('{0} Millisecond'.format(milliseconds))
             else:
-                date_list.append('{0} Micro Seconds'.format(microseconds))
+                date_list.append('{0} Milliseconds'.format(milliseconds))
 
         return ' and '.join(date_list)
 
