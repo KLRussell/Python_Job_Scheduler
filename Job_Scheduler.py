@@ -72,6 +72,7 @@ class Email:
         hours = int(divmod(duration_in_s, 3600)[0] % 24)
         minutes = int(divmod(duration_in_s, 60)[0] % 60)
         seconds = int(duration.seconds % 60)
+        microseconds = int(duration.microseconds % 60)
 
         date_list = []
 
@@ -98,6 +99,12 @@ class Email:
                 date_list.append('{0} Second'.format(seconds))
             else:
                 date_list.append('{0} Seconds'.format(seconds))
+
+        if len(date_list) < 1 and microseconds > 0:
+            if seconds == 1:
+                date_list.append('{0} Micro Second'.format(microseconds))
+            else:
+                date_list.append('{0} Micro Seconds'.format(microseconds))
 
         return ' and '.join(date_list)
 
@@ -373,7 +380,7 @@ class JobConfig(object):
                                   .format(sub_job_type, os.path.basename(sub_job[0])))
                 self.sub_job_file.append(None)
                 self.sub_end_time.append(None)
-                self.sub_error.append('00x01')
+                self.sub_error.append('00x02')
 
     def check_error_list(self):
         failed_tasks = 0
@@ -394,8 +401,15 @@ class JobConfig(object):
         while len(self.sub_end_time) < len(self.sub_start_time):
             self.sub_end_time.append(None)
 
+        eline = len(self.sub_error)
+
         while len(self.sub_error) < len(self.sub_start_time):
             self.sub_error.append(err_code)
+
+            if err_code == '00x02':
+                self.job_log_item("{0} '{1}' failed [ECode 00x02] - This task never processed"
+                                  .format(self.sub_job_type[eline], self.sub_job_name[eline]))
+                eline += 1
 
     def send_email(self, error_msg=None):
         email_trys = -1
