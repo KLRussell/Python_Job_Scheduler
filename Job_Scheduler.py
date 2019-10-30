@@ -299,8 +299,8 @@ class JobConfig(object):
                     stdout, stderr = proc.communicate()
 
                     if proc:
-                        for line in stderr.decode("utf-8").split('\n'):
-                            lines.append(line.rstrip())
+                        for my_line in stderr.decode("utf-8").split('\n'):
+                            lines.append(my_line.rstrip())
 
                         if proc.returncode == 0:
                             self.sub_error.append(None)
