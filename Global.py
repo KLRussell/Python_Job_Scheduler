@@ -162,16 +162,14 @@ class ShelfHandle:
 
     def backup(self):
         file = '%s.bak' % self.file
-        if os.path.exists(file) and os.stat(file).st_size > 0:
+        file2 = '%s.dat' % self.file
+        file3 = '%s.dir' % self.file
+
+        if os.path.exists(file) and os.stat(file).st_size > 0 and os.path.exists(file2) and os.stat(file2).st_size > 0 \
+                and os.path.exists(file3) and os.stat(file3).st_size > 0:
             shutil.copy2(file, '%s_backup.bak' % self.file)
-
-        file = '%s.dat' % self.file
-        if os.path.exists(file) and os.stat(file).st_size > 0:
-            shutil.copy2(file, '%s_backup.dat' % self.file)
-
-        file = '%s.dir' % self.file
-        if os.path.exists(file) and os.stat(file).st_size > 0:
-            shutil.copy2(file, '%s_backup.dir' % self.file)
+            shutil.copy2(file2, '%s_backup.dat' % self.file)
+            shutil.copy2(file3, '%s_backup.dir' % self.file)
 
     def read_shelf(self):
         self.shelf_data.clear()
