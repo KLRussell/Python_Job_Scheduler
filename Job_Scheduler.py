@@ -214,21 +214,20 @@ class JobConfig(object):
         self.job_log.read_shelf()
 
     def close_job(self):
-        i = -1
         fconfig = None
+        fline = None
         global_objs['Local_Settings'].read_shelf()
         my_configs = global_objs['Local_Settings'].grab_item('Job_Configs')
 
-        for my_config in my_configs:
-            i += 1
-
+        for my_line, my_config in enumerate(my_configs):
             if my_config['Job_Name'].lower() == self.job_config['Job_Name'].lower():
                 fconfig = my_config
+                fline = my_line
                 break
 
         if fconfig:
             fconfig['Job_Controls'] = [fconfig['Job_Controls'][0], False, 0]
-            my_configs[i] = fconfig
+            my_configs[fline] = fconfig
             add_setting('Local_Settings', my_configs, 'Job_Configs', False)
 
     def job_name(self):
@@ -631,7 +630,7 @@ if __name__ == '__main__':
                             if watch_jobs(my_job[0], my_job[1], my_job[2]):
                                 jobs.remove(my_job)
 
-                sleep(5)
+                sleep(10)
         except:
             global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
     else:

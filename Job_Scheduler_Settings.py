@@ -1310,9 +1310,6 @@ class JobListGUI:
             else:
                 self.job_log_button.configure(state=DISABLED)
 
-            global_objs['Local_Settings'].read_shelf()
-            self.configs = global_objs['Local_Settings'].grab_item('Job_Configs')
-
             for config in self.configs:
                 if config['Job_Name'].lower() == job_name.lower():
                     config_found = config
@@ -1700,6 +1697,7 @@ def fill_textbox(setting_list, val, key):
 def add_setting(setting_list, val, key, encrypt=True):
     assert (key and setting_list)
 
+    global_objs[setting_list].backup()
     global_objs[setting_list].del_item(key)
 
     if val:

@@ -20,6 +20,7 @@ import logging
 import base64
 import random
 import string
+import shutil
 
 # Include this immport of dumb from dbm_lock for pyinstaller's Exe compiler
 from dbm_lock import dumb
@@ -158,6 +159,19 @@ class ShelfHandle:
     def change_config(self, filepath):
         if os.path.exists(os.path.split(self.file)[0]):
             self.file = filepath
+
+    def backup(self):
+        file = '%s.bak' % self.file
+        if os.path.exists(file) and os.stat(file).st_size > 0:
+            shutil.copy2(file, '%s_backup.bak' % self.file)
+
+        file = '%s.dat' % self.file
+        if os.path.exists(file) and os.stat(file).st_size > 0:
+            shutil.copy2(file, '%s_backup.dat' % self.file)
+
+        file = '%s.dir' % self.file
+        if os.path.exists(file) and os.stat(file).st_size > 0:
+            shutil.copy2(file, '%s_backup.dir' % self.file)
 
     def read_shelf(self):
         self.shelf_data.clear()
