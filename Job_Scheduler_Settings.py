@@ -8,6 +8,7 @@ from Global import grabobjs
 from Global import CryptHandle
 from Global import ShelfHandle
 from math import floor
+from time import sleep
 
 # This is needed when compiling .Exe since compiler has issues including hidden imported modules (Only for TkCalender)
 import babel.numbers
@@ -1309,6 +1310,9 @@ class JobListGUI:
             else:
                 self.job_log_button.configure(state=DISABLED)
 
+            global_objs['Local_Settings'].read_shelf()
+            self.configs = global_objs['Local_Settings'].grab_item('Job_Configs')
+
             for config in self.configs:
                 if config['Job_Name'].lower() == job_name.lower():
                     config_found = config
@@ -1319,10 +1323,16 @@ class JobListGUI:
                 else:
                     action_name = 'Enable'
 
-                if config_found['Job_Controls'][1] or config_found['Job_Controls'][2] == 2:
-                    instant_action_name = 'Stop'
+                if config_found['Job_Controls'][1]:
+                    if config_found['Job_Controls'][2] == 1:
+                        instant_action_name = 'Stopping'
+                    else:
+                        instant_action_name = 'Stop'
                 else:
-                    instant_action_name = 'Start'
+                    if config_found['Job_Controls'][2] == 2:
+                        instant_action_name = 'Starting'
+                    else:
+                        instant_action_name = 'Start'
 
                 self.job_action_button.configure(text='%s Job' % action_name)
                 self.job_instant_action_button.configure(text='%s Job' % instant_action_name)
@@ -1357,6 +1367,8 @@ class JobListGUI:
     def modify_job(self):
         if self.job_list_box.curselection():
             config_found = None
+            global_objs['Local_Settings'].read_shelf()
+            self.configs = global_objs['Local_Settings'].grab_item('Job_Configs')
             job_name = self.job_list_box.get(self.job_list_box.curselection())
 
             for config in self.configs:
@@ -1383,17 +1395,17 @@ class JobListGUI:
 
     def job_action(self):
         if self.job_list_box.curselection():
-            i = -1
-            sel = i
+            sel = None
             config_found = None
             job_name = self.job_list_box.get(self.job_list_box.curselection())
+            global_objs['Local_Settings'].read_shelf()
+            self.configs = global_objs['Local_Settings'].grab_item('Job_Configs')
 
-            for config in self.configs:
-                i += 1
-
+            for line, config in enumerate(self.configs):
                 if config['Job_Name'].lower() == job_name.lower():
-                    sel = i
+                    sel = line
                     config_found = config
+                    break
 
             if config_found:
                 job_status = config_found['Job_Controls'][1]
@@ -1442,17 +1454,17 @@ class JobListGUI:
 
     def job_instant_action(self):
         if self.job_list_box.curselection():
-            i = -1
-            sel = i
+            sel = None
             config_found = None
+            global_objs['Local_Settings'].read_shelf()
+            self.configs = global_objs['Local_Settings'].grab_item('Job_Configs')
             job_name = self.job_list_box.get(self.job_list_box.curselection())
 
-            for config in self.configs:
-                i += 1
-
+            for line, config in enumerate(self.configs):
                 if config['Job_Name'].lower() == job_name.lower():
-                    sel = i
+                    sel = line
                     config_found = config
+                    break
 
             if config_found and config_found['Job_Controls'][0]:
                 job_status = config_found['Job_Controls'][1]

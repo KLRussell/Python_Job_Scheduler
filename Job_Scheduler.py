@@ -470,53 +470,56 @@ def check_settings():
         return True
 
 
-def repackage_freq(line, next_run):
-    job_schedule = copy.deepcopy(config['Job_Schedule'])
+def repackage_freq(my_config, freq_line, next_run):
+    job_schedule = copy.deepcopy(my_config['Job_Schedule'])
     freq_list, days_of_week, freq_start_dt_list, freq_missed_run_list, prev_run_list, next_run_list = zip(*job_schedule)
     prev_run_list = list(prev_run_list)
     next_run_list = list(next_run_list)
-    prev_run_list[line] = datetime.datetime.now()
-    next_run_list[line] = next_run
-    config['Job_Schedule'] = zip(freq_list, days_of_week, freq_start_dt_list, freq_missed_run_list, prev_run_list,
-                                 next_run_list)
-    config['Job_Controls'] = [True, True, 0]
-    configs[x] = config
+    prev_run_list[freq_line] = datetime.datetime.now()
+    next_run_list[freq_line] = next_run
+    my_config['Job_Schedule'] = zip(freq_list, days_of_week, freq_start_dt_list, freq_missed_run_list, prev_run_list,
+                                    next_run_list)
+    my_config['Job_Controls'] = [True, True, 0]
+    return my_config
 
 
-def val_exec(sstarted):
-    i = -1
-    job_schedule = copy.deepcopy(config['Job_Schedule'])
-    job_controls = config['Job_Controls']
+def val_exec(my_config, sstarted):
+    freq_line = -1
+    job_schedule = copy.deepcopy(my_config['Job_Schedule'])
+    job_controls = my_config['Job_Controls']
 
     if job_controls[0]:
         for freq, days_of_week, freq_start_dt, freq_missed_run, prev_run, next_run in job_schedule:
-            i += 1
+            freq_line += 1
 
             if datetime.datetime.now().strftime('%Y%m%d %H:%M') == next_run.strftime('%Y%m%d %H:%M') \
                     or (freq_missed_run == 1 and next_run < datetime.datetime.now()) \
                     or (not job_controls[1] and job_controls[2] == 2) or (sstarted and job_controls[1]):
-                repackage_freq(i, next_run_date(freq_start_dt, freq, days_of_week))
-                return True
+                return repackage_freq(my_config, freq_line, next_run_date(freq_start_dt, freq, days_of_week))
 
     if job_controls[2] == 1:
-        stop_job_list.append(config['Job_Name'].lower())
+        stop_job_list.append(my_config['Job_Name'].lower())
 
 
 def exec_job(class_obj):
     if class_obj:
-        class_obj.start_job()
-        class_obj.send_email()
-        class_obj.close_job()
-        class_obj.close_conn()
-        del class_obj
+        try:
+            class_obj.start_job()
+            class_obj.send_email()
+        finally:
+            class_obj.close_job()
+            class_obj.close_conn()
+            del class_obj
 
 
 def exec_email(class_obj, err_msg):
     if class_obj:
-        class_obj.send_email(error_msg=err_msg)
-        class_obj.close_job()
-        class_obj.close_conn()
-        del class_obj
+        try:
+            class_obj.send_email(error_msg=err_msg)
+        finally:
+            class_obj.close_job()
+            class_obj.close_conn()
+            del class_obj
 
 
 def watch_jobs(job_thread, job_obj, job_timeout):
@@ -531,6 +534,7 @@ def watch_jobs(job_thread, job_obj, job_timeout):
 
                 jw = Process(target=exec_email, args=[job_obj,
                                                       "Failed execution because it was requested to be stopped by GUI"])
+                jw.daemon = True
                 jw.start()
                 stop_job_list.remove(stop_job_name)
                 return True
@@ -539,6 +543,7 @@ def watch_jobs(job_thread, job_obj, job_timeout):
         global_objs['Event_Log'].write_log("Job '{0}' failed execution as if it was never executed"
                                            .format(job_obj.job_name()))
         jw = Process(target=exec_email, args=[job_obj, "Failed execution as if it was never executed"])
+        jw.daemon = True
         jw.start()
         return True
     elif job_thread.exitcode == 0 and not job_thread.is_alive():
@@ -553,6 +558,7 @@ def watch_jobs(job_thread, job_obj, job_timeout):
 
         jw = Process(target=exec_email, args=[job_obj, "Failed execution because it ran into an Error Code %s"
                                               % job_thread.exitcode])
+        jw.daemon = True
         jw.start()
         return True
     elif job_timeout and job_timeout < datetime.datetime.now():
@@ -562,6 +568,7 @@ def watch_jobs(job_thread, job_obj, job_timeout):
             job_thread.terminate()
 
         jw = Process(target=exec_email, args=[job_obj, "Timed-Out while processing"])
+        jw.daemon = True
         jw.start()
         return True
 
@@ -576,6 +583,7 @@ if __name__ == '__main__':
         script_started = True
         jw_thread = None
         jobs = []
+        stop_job_list = []
 
         try:
             BaseManager.register('JobConfig', JobConfig)
@@ -588,25 +596,25 @@ if __name__ == '__main__':
                 configs = global_objs['Local_Settings'].grab_item('Job_Configs')
 
                 if configs:
-                    x = -1
-                    stop_job_list = []
                     update_settings = False
 
-                    for config in configs:
-                        x += 1
+                    for line, config in enumerate(configs):
+                        new_config = val_exec(config, script_started)
 
-                        if val_exec(script_started):
-                            update_settings = True
+                        if new_config:
                             global_objs['Event_Log'].write_log("Starting Job '%s'" % config['Job_Name'])
-                            config['Start_Time'] = datetime.datetime.now()
-                            myobj = manager.JobConfig(config)
+                            update_settings = True
+                            new_config['Start_Time'] = datetime.datetime.now()
+                            myobj = manager.JobConfig(new_config)
+                            configs[line] = new_config
 
                             j = Process(target=exec_job, args=[myobj])
+                            j.daemon = True
                             j.start()
 
-                            if int(config['Job_Timeout'][0]) > 0 or int(config['Job_Timeout'][1]) > 0:
+                            if int(new_config['Job_Timeout'][0]) > 0 or int(new_config['Job_Timeout'][1]) > 0:
                                 jw_thread = [j, myobj, datetime.datetime.now() + datetime.timedelta(
-                                    hours=int(config['Job_Timeout'][0]), minutes=int(config['Job_Timeout'][1]))]
+                                    hours=int(new_config['Job_Timeout'][0]), minutes=int(new_config['Job_Timeout'][1]))]
                             else:
                                 jw_thread = [j, myobj, None]
 
@@ -623,7 +631,7 @@ if __name__ == '__main__':
                             if watch_jobs(my_job[0], my_job[1], my_job[2]):
                                 jobs.remove(my_job)
 
-                sleep(10)
+                sleep(5)
         except:
             global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
     else:
