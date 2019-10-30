@@ -59,6 +59,7 @@ def grabobjs(scriptdir, filename=None):
             myobjs['Local_Settings'] = ShelfHandle(os.path.join(scriptdir, 'Script_Settings'))
             myobjs['Local_Settings'].add_item('General_Settings_Path', myinput)
             myobjs['Local_Settings'].write_shelf()
+            myobjs['Local_Settings'].backup()
             myobjs['Settings'] = ShelfHandle(os.path.join(myinput, 'General_Settings'))
             myobjs['Settings'].read_shelf()
 
