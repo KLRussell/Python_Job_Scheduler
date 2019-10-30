@@ -1697,13 +1697,13 @@ def fill_textbox(setting_list, val, key):
 def add_setting(setting_list, val, key, encrypt=True):
     assert (key and setting_list)
 
-    global_objs[setting_list].backup()
     global_objs[setting_list].del_item(key)
 
     if val:
         global_objs[setting_list].add_item(key=key, val=val, encrypt=encrypt)
 
     global_objs[setting_list].write_shelf()
+    global_objs[setting_list].backup()
 
 
 def next_date(start_date, days):
