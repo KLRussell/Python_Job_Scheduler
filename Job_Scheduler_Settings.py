@@ -17,7 +17,6 @@ import datetime
 import os
 import copy
 import pyperclip
-import pandas as pd
 import pathlib as pl
 import sys
 import portalocker
@@ -49,7 +48,7 @@ class SettingsGUI:
 
     # Function that is executed upon creation of SettingsGUI class
     def __init__(self):
-        self.header_text = "Welcome to Job Scheduler Settings!\nPlease add a job below.\nPress 'Add Job' when finished"
+        self.header_text = "Welcome to Job Scheduler Settings!\nPlease add or modify network/email settings below"
 
         self.email_upass_obj = global_objs['Settings'].grab_item('Email_Pass')
         self.asql = global_objs['SQL']

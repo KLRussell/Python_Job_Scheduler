@@ -6,6 +6,9 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from sqlalchemy.exc import SQLAlchemyError
+from tkinter import filedialog
+from tkinter import messagebox
+from tkinter import *
 
 import traceback
 import xml.etree.ElementTree as ET
@@ -29,47 +32,137 @@ from dbm_lock import dumb
 def grabobjs(scriptdir, filename=None):
     if scriptdir and os.path.exists(scriptdir):
         myobjs = dict()
-        myinput = None
+        myobjs['Local_Settings'] = ShelfHandle(os.path.join(scriptdir, 'Script_Settings'))
 
         if len(list(pl.Path(scriptdir).glob('Script_Settings.*'))) > 0:
-            myobjs['Local_Settings'] = ShelfHandle(os.path.join(scriptdir, 'Script_Settings'))
+            myobjs['Local_Settings'].read_shelf()
+            mydir = myobjs['Local_Settings'].grab_item('General_Settings_Path')
+        else:
+            mydir = None
+
+        if not mydir or os.path.exists(mydir):
+            obj = GeneralSettingsGUI(scriptdir)
+            obj.build_gui()
             myobjs['Local_Settings'].read_shelf()
             mydir = myobjs['Local_Settings'].grab_item('General_Settings_Path')
 
-            if mydir and os.path.exists(mydir):
-                myobjs['Settings'] = ShelfHandle(os.path.join(myobjs['Local_Settings'].grab_item(
-                    'General_Settings_Path'), 'General_Settings'))
-                myobjs['Settings'].read_shelf()
-            else:
-                while not myinput:
-                    print("Please input a directory path where to setup general settings at:")
-                    myinput = input()
-
-                    if myinput and not os.path.exists(myinput):
-                        myinput = None
-        else:
-            while not myinput:
-                print("Please input a directory path where to setup general settings at:")
-                myinput = input()
-
-                if myinput and not os.path.exists(myinput):
-                    myinput = None
-
-        if myinput:
-            myobjs['Local_Settings'] = ShelfHandle(os.path.join(scriptdir, 'Script_Settings'))
-            myobjs['Local_Settings'].add_item('General_Settings_Path', myinput)
-            myobjs['Local_Settings'].write_shelf()
-            myobjs['Local_Settings'].backup()
-            myobjs['Settings'] = ShelfHandle(os.path.join(myinput, 'General_Settings'))
+        if mydir and os.path.exists(mydir):
+            myobjs['Settings'] = ShelfHandle(os.path.join(myobjs['Local_Settings'].grab_item(
+                'General_Settings_Path'), 'General_Settings'))
             myobjs['Settings'].read_shelf()
+            myobjs['SQL'] = SQLHandle(logobj=myobjs['Event_Log'], settingsobj=myobjs['Settings'])
+            myobjs['Event_Log'] = LogHandle(scriptdir, filename)
+            myobjs['Errors'] = ErrHandle(myobjs['Event_Log'])
 
-        myobjs['Event_Log'] = LogHandle(scriptdir, filename)
-        myobjs['SQL'] = SQLHandle(logobj=myobjs['Event_Log'], settingsobj=myobjs['Settings'])
-        myobjs['Errors'] = ErrHandle(myobjs['Event_Log'])
-
-        return myobjs
+            return myobjs
+        else:
+            raise Exception('No General Settings were established. Please re-run')
     else:
         raise Exception('Invalid script path provided')
+
+
+class GeneralSettingsGUI:
+    def __init__(self, script_dir):
+        self.main = Tk()
+        self.gen_dir = StringVar()
+        self.script_dir = script_dir
+
+    def build_gui(self):
+        file_path = os.path.join(self.script_dir, 'Script_Settings_backup')
+        header_text = "Settings will need to be setup\nPlease specify the location or to set the location of General Settings"
+
+        # Set GUI Geometry and GUI Title
+        self.main.geometry('400x130+500+90')
+        self.main.title('Settings Setup')
+        self.main.resizable(False, False)
+
+        # Set GUI Frames
+        header_frame = Frame(self.main)
+        settings_frame = LabelFrame(self.main, text='Settings Setup', width=508, height=70)
+        buttons_frame = Frame(self.main)
+
+        # Apply Frames into GUI
+        header_frame.pack(fill="both")
+        settings_frame.pack(fill="both")
+        buttons_frame.pack(fill="both")
+
+        # Apply Header text to Header_Frame that describes purpose of GUI
+        header = Message(self.main, text=header_text, width=400, justify=CENTER)
+        header.pack(in_=header_frame)
+
+        # Apply Directory Entry Box Widget
+        dir_label = Label(settings_frame, text='Directory:')
+        dir_txtbox = Entry(settings_frame, textvariable=self.gen_dir, width=42)
+        dir_label.grid(row=0, column=0, padx=4, pady=5)
+        dir_txtbox.grid(row=0, column=1, padx=4, pady=5)
+
+        # Apply Directory Finder Button Widget
+        find_dir_button = Button(settings_frame, text='Find Dir', width=7, command=self.find_dir)
+        find_dir_button.grid(row=0, column=2, padx=4, pady=5)
+
+        # Apply Buttons to the Buttons Frame
+        #     Save Settings
+        create_button = Button(buttons_frame, text='Create Settings', width=15, command=self.create_settings)
+        create_button.grid(row=0, column=0, pady=6, padx=9)
+
+        #     Restore Button
+        restore_button = Button(buttons_frame, text='Restore Settings', width=15, command=self.restore_settings)
+        restore_button.grid(row=0, column=1, pady=6, padx=9)
+
+        if os.path.exists('%s.dir' % file_path) and os.path.exists('%s.dat' % file_path)\
+                and os.path.exists('%s.bak' % file_path):
+            restore_button.configure(state=NORMAL)
+        else:
+            restore_button.configure(state=DISABLED)
+
+        #     Cancel Button
+        cancel_button = Button(buttons_frame, text='Cancel', width=15, command=self.cancel)
+        cancel_button.grid(row=0, column=2, pady=6, padx=9)
+
+        # Show dialog
+        self.main.mainloop()
+
+    def find_dir(self):
+        if self.gen_dir.get() and os.path.exists(self.gen_dir.get()):
+            init_dir = os.path.dirname(self.gen_dir.get())
+        else:
+            init_dir = '/'
+
+        file = filedialog.askdirectory(initialdir=init_dir, title='Select Directory', parent=self.main)
+
+        if file:
+            self.gen_dir.set(file)
+
+    def create_settings(self):
+        gen_dir = self.gen_dir.get()
+
+        if not gen_dir:
+            messagebox.showerror('Field Empty Error!', 'No value has been inputed for Directory',
+                                 parent=self.main)
+        elif not os.path.exists(gen_dir):
+            messagebox.showerror('Invalid Path Error!', 'Directory Path does not exist',
+                                 parent=self.main)
+        else:
+            obj = ShelfHandle(os.path.join(self.script_dir, 'Script_Settings'))
+            obj.add_item('General_Settings_Path', self.gen_dir.get())
+            obj.write_shelf()
+            del obj
+            self.main.destroy()
+
+    def restore_settings(self):
+        backup_file = os.path.join(self.script_dir, 'Script_Settings_backup')
+        setting_file = os.path.join(self.script_dir, 'Script_Settings')
+
+        if os.path.exists('%s.dat' % backup_file) \
+                and os.path.exists('%s.dir' % backup_file) \
+                and os.path.exists('%s.bak' % backup_file):
+            shutil.copy2('%s.dat' % backup_file, '%s.dat' % setting_file)
+            shutil.copy2('%s.dir' % backup_file, '%s.dir' % setting_file)
+            shutil.copy2('%s.bak' % backup_file, '%s.bak' % setting_file)
+            self.cancel()
+
+    def cancel(self):
+        self.main.destroy()
 
 
 class CryptHandle:
