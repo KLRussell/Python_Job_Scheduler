@@ -8,7 +8,6 @@ from Global import grabobjs
 from Global import CryptHandle
 from Global import ShelfHandle
 from math import floor
-from time import sleep
 
 # This is needed when compiling .Exe since compiler has issues including hidden imported modules (Only for TkCalender)
 import babel.numbers
@@ -21,6 +20,7 @@ import pyperclip
 import pandas as pd
 import pathlib as pl
 import sys
+import portalocker
 
 if getattr(sys, 'frozen', False):
     application_path = sys.executable
@@ -1656,13 +1656,13 @@ class JobLogGUI:
         if self.history_list_box.size() > 0:
             hist_list = self.history_list_box.get(0, self.history_list_box.size() - 1)
             hist_date = str(self.dates_list_box.get(self.dates_list_sel))
-            df = pd.DataFrame(hist_list, columns=['%s Log Data' % hist_date])
+            export_file = os.path.join(joblogsexpdir, '{0}_{1}.txt'.format(hist_date, self.job_name))
 
-            with pd.ExcelWriter(os.path.join(joblogsexpdir, '{0}_{1}.xlsx'.format(hist_date, self.job_name))) as writer:
-                df.to_excel(writer, index=False, sheet_name=self.job_name)
+            with portalocker.Lock(export_file, 'w') as f:
+                f.write('\n'.join(hist_list))
 
-            messagebox.showinfo('Log Exported!', 'Your log has been exported to {0}_{1}.xlsx'.format(
-                hist_date, self.job_name), parent=self.main)
+            messagebox.showinfo('Log Exported!', 'Your log has been exported to %s' % os.path.basename(export_file),
+                                parent=self.main)
 
     def delete_log(self):
         hist_date = str(self.dates_list_box.get(self.dates_list_sel))
