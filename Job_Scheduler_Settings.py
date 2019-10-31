@@ -75,7 +75,7 @@ class SettingsGUI:
             self.header_text = header
 
         # Set GUI Geometry and GUI Title
-        self.main.geometry('420x220+500+90')
+        self.main.geometry('420x205+500+90')
         self.main.title('Job Scheduler Settings')
         self.main.resizable(False, False)
 
