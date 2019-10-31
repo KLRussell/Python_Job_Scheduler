@@ -1667,15 +1667,18 @@ class JobLogGUI:
     def delete_log(self):
         hist_date = str(self.dates_list_box.get(self.dates_list_sel))
         self.job_log.del_item(hist_date)
+        self.job_log.write_shelf()
         self.dates_list_box.delete(self.dates_list_sel)
-        self.job_log.shelf_write()
+
+        if self.dates_list_box.size() > 0:
+            if self.dates_list_sel > 0:
+                self.dates_list_sel -= 1
+
+            self.dates_list_box.select_set(self.dates_list_sel)
+
         global_objs['Local_Settings'].read_shelf()
         self.destroy = True
         self.class_obj.fill_gui(True)
-
-        if self.dates_list_box.size() > 0:
-            self.dates_list_sel -= 1
-            self.dates_list_box.select_set(self.dates_list_sel)
 
         self.select_toggle()
 
