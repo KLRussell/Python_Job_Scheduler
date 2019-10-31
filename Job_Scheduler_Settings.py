@@ -1148,6 +1148,7 @@ class JobListGUI:
         self.main = Toplevel(root)
         self.configs = global_objs['Local_Settings'].grab_item('Job_Configs')
         self.main.iconbitmap(icon_path)
+        self.config_selected = None
 
         self.prev_run = StringVar()
         self.next_run = StringVar()
@@ -1299,67 +1300,70 @@ class JobListGUI:
             config_found = None
             job_name = self.job_list_box.get(self.job_list_sel)
 
-            if os.path.exists(os.path.join(joblogsdir, '%s.bak' % job_name)):
-                self.job_log = ShelfHandle(os.path.join(joblogsdir, job_name))
-                self.job_log.read_shelf()
+            if not self.config_selected or self.config_selected != job_name:
+                self.config_selected = job_name
 
-                if self.job_log and self.job_log.grab_list():
-                    self.job_log_button.configure(state=NORMAL)
+                if os.path.exists(os.path.join(joblogsdir, '%s.bak' % job_name)):
+                    self.job_log = ShelfHandle(os.path.join(joblogsdir, job_name))
+                    self.job_log.read_shelf()
+
+                    if self.job_log and self.job_log.grab_list():
+                        self.job_log_button.configure(state=NORMAL)
+                    else:
+                        self.job_log_button.configure(state=DISABLED)
                 else:
                     self.job_log_button.configure(state=DISABLED)
-            else:
-                self.job_log_button.configure(state=DISABLED)
 
-            for config in self.configs:
-                if config['Job_Name'].lower() == job_name.lower():
-                    config_found = config
+                for config in self.configs:
+                    if config['Job_Name'].lower() == job_name.lower():
+                        config_found = config
 
-            if config_found:
-                if config_found['Job_Controls'][0]:
-                    action_name = 'Disable'
-                else:
-                    action_name = 'Enable'
-
-                if config_found['Job_Controls'][1]:
-                    if config_found['Job_Controls'][2] == 1:
-                        instant_action_name = 'Stopping'
+                if config_found:
+                    if config_found['Job_Controls'][0]:
+                        action_name = 'Disable'
                     else:
-                        instant_action_name = 'Stop'
-                else:
-                    if config_found['Job_Controls'][2] == 2:
-                        instant_action_name = 'Starting'
+                        action_name = 'Enable'
+
+                    if config_found['Job_Controls'][1]:
+                        if config_found['Job_Controls'][2] == 1:
+                            instant_action_name = 'Stopping'
+                        else:
+                            instant_action_name = 'Stop'
                     else:
-                        instant_action_name = 'Start'
+                        if config_found['Job_Controls'][2] == 2:
+                            instant_action_name = 'Starting'
+                        else:
+                            instant_action_name = 'Start'
 
-                self.job_action_button.configure(text='%s Job' % action_name)
-                self.job_instant_action_button.configure(text='%s Job' % instant_action_name)
+                    self.job_action_button.configure(text='%s Job' % action_name)
+                    self.job_instant_action_button.configure(text='%s Job' % instant_action_name)
 
-                max_prev_run = None
-                min_next_run = None
-                job_schedule = copy.deepcopy(config_found['Job_Schedule'])
+                    max_prev_run = None
+                    min_next_run = None
+                    job_schedule = copy.deepcopy(config_found['Job_Schedule'])
 
-                for freq, days_of_week, start_dt, missed_run, prev_run, next_run in job_schedule:
-                    if not max_prev_run or (max_prev_run and prev_run and max_prev_run < prev_run):
-                        max_prev_run = prev_run
+                    for freq, days_of_week, start_dt, missed_run, prev_run, next_run in job_schedule:
+                        if not max_prev_run or (max_prev_run and prev_run and max_prev_run < prev_run):
+                            max_prev_run = prev_run
 
-                    if not min_next_run or (min_next_run and next_run and min_next_run > next_run):
-                        min_next_run = next_run
+                        if not min_next_run or (min_next_run and next_run and min_next_run > next_run):
+                            min_next_run = next_run
 
-                if max_prev_run:
-                    self.prev_run.set(max_prev_run.__format__("%Y%m%d %H:%M"))
-                else:
-                    self.prev_run.set('')
+                    if max_prev_run:
+                        self.prev_run.set(max_prev_run.__format__("%Y%m%d %H:%M"))
+                    else:
+                        self.prev_run.set('')
 
-                if min_next_run:
-                    self.next_run.set(min_next_run.__format__("%Y%m%d %H:%M"))
-                else:
-                    self.next_run.set('')
+                    if min_next_run:
+                        self.next_run.set(min_next_run.__format__("%Y%m%d %H:%M"))
+                    else:
+                        self.next_run.set('')
 
-                return
+                    return
 
-        self.job_log_button.configure(state=DISABLED)
-        self.prev_run.set('')
-        self.next_run.set('')
+            self.job_log_button.configure(state=DISABLED)
+            self.prev_run.set('')
+            self.next_run.set('')
 
     def modify_job(self):
         if self.job_list_box.curselection():
