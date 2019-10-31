@@ -40,7 +40,7 @@ def grabobjs(scriptdir, filename=None):
         else:
             mydir = None
 
-        if not mydir or os.path.exists(mydir):
+        if not mydir or not os.path.exists(mydir):
             obj = GeneralSettingsGUI(scriptdir)
             obj.build_gui()
             myobjs['Local_Settings'].read_shelf()
