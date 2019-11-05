@@ -632,7 +632,7 @@ class SQLHandle:
     def query2(self, query):
         try:
             if self.conn_type == 'alch':
-                obj = self.engine.execute(mysql.text(query))
+                obj = self.engine.execution_options(autocommit=True).execute(mysql.text(query))
 
                 if obj._saved_cursor.arraysize > 0:
                     try:
