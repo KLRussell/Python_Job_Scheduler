@@ -330,7 +330,7 @@ class JobConfig(object):
             self.job_log_item("Grabbing data from Stored Procedure '{0}'".format(job))
             self.data = self.asql.query2('''EXEC {0}'''.format(job))
 
-            if not self.data.empty:
+            if not self.data[0].empty:
                 return True
         else:
             self.data = pd.DataFrame()
@@ -339,9 +339,9 @@ class JobConfig(object):
         return False
 
     def write_batch(self, job, attach_prefix):
-        if not self.data.empty:
+        if not self.data[0].empty:
             self.job_log_item("Stored Procedure '{0}' found {1} items to batch. Proceeding to batch to excel"
-                              .format(job, len(self.data)))
+                              .format(job, len(self.data[0])))
             i = 1
             file = None
 
@@ -358,7 +358,7 @@ class JobConfig(object):
                     i += 1
 
             with pd.ExcelWriter(file) as writer:
-                self.data.to_excel(writer, index=False, sheet_name=datetime.datetime.now().__format__("%Y%m%d"))
+                self.data[0].to_excel(writer, index=False, sheet_name=datetime.datetime.now().__format__("%Y%m%d"))
 
             return file
 

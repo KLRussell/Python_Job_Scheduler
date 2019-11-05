@@ -635,10 +635,13 @@ class SQLHandle:
                 obj = self.engine.execute(mysql.text(query))
 
                 if obj._saved_cursor.arraysize > 0:
-                    data = obj.fetchall()
-                    columns = obj._metadata.keys
+                    try:
+                        data = obj.fetchall()
+                        columns = obj._metadata.keys
 
-                    return [pd.DataFrame(data, columns=columns), None, None]
+                        return [pd.DataFrame(data, columns=columns), None, None]
+                    except:
+                        return [pd.DataFrame(), None, None]
                 else:
                     return [pd.DataFrame(), None, None]
         except SQLAlchemyError as e:
