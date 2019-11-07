@@ -1031,6 +1031,9 @@ class JobGUI:
         elif len(self.sub_job_list) < 1:
             messagebox.showerror('Field Empty Error!', 'You haven''t added a Job Task. Plz add one',
                                  parent=self.main)
+        elif not self.timeout_hh.get() > 0 and not self.timeout_mm.get() > 0:
+            messagebox.showerror('Timeout Fields Error!', 'You haven''t added timeout time. Plz add one',
+                                 parent=self.main)
         else:
             i = -1
             line_num = i

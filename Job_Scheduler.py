@@ -319,6 +319,11 @@ class JobConfig(object):
                     self.sub_end_time.append(None)
                     self.sub_error.append('00x01')
             except Exception as e:
+                if len(self.sub_end_time) < len(self.sub_start_time):
+                    self.sub_job_file.append(None)
+                    self.sub_end_time.append(None)
+                    self.sub_error.append(type(e).__name__)
+
                 self.job_log_item("{0} '{1}' failed [ECode {2}] - {3}"
                                   .format(sub_job_type, os.path.basename(sub_job[0]), type(e).__name__, str(e)))
                 self.list_chksum(type(e).__name__)
