@@ -383,6 +383,9 @@ class LogHandle:
         filepath = os.path.join(self.EventLog_Dir,
                                 "{0}_{1}_Log.txt".format(datetime.datetime.now().__format__("%Y%m%d"), self.filename))
 
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
+
         logging.basicConfig(filename=filepath,
                             level=logging.DEBUG, format=' %(asctime)s - %(levelname)s - %(message)s')
 
