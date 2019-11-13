@@ -500,33 +500,35 @@ class SQLHandle:
         conn_str = self.__connect_str()
 
         try:
-            if self.conn_type == 'alch' and not self.raw_engine and not self.engine:
-                self.raw_engine = mysql.create_engine(conn_str, connect_args={'timeout': conn_timeout,
+            if self.conn_type == 'alch':
+                if not self.raw_engine:
+                    self.raw_engine = mysql.create_engine(conn_str, connect_args={'timeout': conn_timeout,
+                                                                                  'connect_timeout': conn_timeout})
+
+                    try:
+                        self.raw_engine.connect()
+                    except:
+                        self.__proc_errors()
+                        self.close_conn()
+                        return False
+                    else:
+                        self.raw_engine = self.raw_engine.raw_connection()
+
+                if not self.engine:
+                    self.engine = mysql.create_engine(conn_str, connect_args={'timeout': conn_timeout,
                                                                               'connect_timeout': conn_timeout})
 
-                try:
-                    self.raw_engine.connect()
-                except:
-                    self.__proc_errors()
-                    self.close_conn()
-                    return False
-                else:
-                    self.raw_engine = self.raw_engine.raw_connection()
-
-                self.engine = mysql.create_engine(conn_str, connect_args={'timeout': conn_timeout,
-                                                                          'connect_timeout': conn_timeout})
-
-                try:
-                    self.engine.connect()
-                except:
-                    self.__proc_errors()
-                    self.close_conn()
-                    return False
-                else:
-                    if self.session:
-                        self.engine = sessionmaker(bind=self.engine)
-                        self.engine = self.engine()
-                        self.engine._model_changes = {}
+                    try:
+                        self.engine.connect()
+                    except:
+                        self.__proc_errors()
+                        self.close_conn()
+                        return False
+                    else:
+                        if self.session:
+                            self.engine = sessionmaker(bind=self.engine)
+                            self.engine = self.engine()
+                            self.engine._model_changes = {}
 
                 if test_conn:
                     self.close_conn()

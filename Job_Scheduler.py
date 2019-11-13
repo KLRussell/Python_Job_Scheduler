@@ -206,7 +206,6 @@ class JobConfig(object):
         self.sub_error = []
         self.data = pd.DataFrame()
         self.asql = global_objs['SQL']
-        self.asql.connect('alch')
         self.job_config = job_config
         self.job_log = ShelfHandle(os.path.join(joblogsdir, job_config['Job_Name']))
         self.job_log.read_shelf()
