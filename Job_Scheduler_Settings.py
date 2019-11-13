@@ -682,7 +682,7 @@ class JobGUI:
 
         if self.js_task_type.get() == 1:
             self.js_task_label.configure(text='Stored Proc:')
-            self.js_fprefix_label.configure(text='File Prefix:')
+            self.js_fprefix_label.configure(text='Tab Name:')
             self.js_file_dir.grid_remove()
             self.js_attach_chkbox.grid(row=0, column=0, padx=3, pady=4, sticky='w')
             self.js_shellcomm_entry.configure(state=DISABLED)

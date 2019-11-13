@@ -20,6 +20,7 @@ import datetime
 import traceback
 import copy
 import sys
+import portalocker
 
 if getattr(sys, 'frozen', False):
     from multiprocessing import freeze_support
@@ -247,9 +248,10 @@ class JobConfig(object):
         self.job_log_item("Starting Job '{0}'".format(self.job_config['Job_Name']))
 
         for sub_job, sub_job_type in copy.deepcopy(self.job_config['Job_List']):
-            self.job_log_item("Processing {0} '{1}'".format(sub_job_type, os.path.basename(sub_job[0])))
+            job_name = os.path.basename(sub_job[0])
+            self.job_log_item("Processing {0} '{1}'".format(sub_job_type, job_name))
 
-            self.sub_job_name.append(os.path.basename(sub_job[0]))
+            self.sub_job_name.append(job_name)
             self.sub_job_type.append(sub_job_type)
             self.sub_start_time.append(datetime.datetime.now())
 
@@ -280,24 +282,47 @@ class JobConfig(object):
                     if sub_job[2]:
                         proc = Popen(['powershell.exe', "{2} '{0}' {1}".format(sub_job[0], sub_job[1], sub_job[2])],
                                      stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                        stdout, stderr = proc.communicate()
                     elif ext == '.py':
                         proc = Popen(['powershell.exe', "python '{0}' {1}".format(sub_job[0], sub_job[1])], stdin=PIPE,
                                      stdout=PIPE, stderr=PIPE)
+                        stdout, stderr = proc.communicate()
                     elif ext == '.ps1':
                         proc = Popen(['powershell.exe', ". '{0}' {1}".format(sub_job[0], sub_job[1])], stdin=PIPE,
                                      stdout=PIPE, stderr=PIPE)
+                        stdout, stderr = proc.communicate()
                     elif ext == '.vbs':
                         proc = Popen(['powershell.exe', "cscript '{0}' {1}".format(sub_job[0], sub_job[1])], stdin=PIPE,
                                      stdout=PIPE, stderr=PIPE)
+                        stdout, stderr = proc.communicate()
                     elif ext == '.exe':
                         proc = Popen('{0} {1}'.format(sub_job[0], sub_job[1]), stdin=PIPE, stdout=PIPE)
+                        stdout, stderr = proc.communicate()
+                    elif ext == '.sql':
+                        proc = None
+                        stderr = None
+                        self.exec_sql(sub_job[0])
                     else:
                         proc = Popen(['powershell.exe', "'{0}' {1}".format(sub_job[0], sub_job[1])],
                                      stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                        stdout, stderr = proc.communicate()
 
-                    stdout, stderr = proc.communicate()
+                    if ext == '.sql':
+                        if self.data[1]:
+                            self.job_log_item("{0} '{1}' failed [ECode {2}] - {3}"
+                                              .format(sub_job_type, job_name, self.data[1], self.data[2]))
+                            self.sub_error.append(self.data[1])
+                            self.sub_end_time.append(None)
+                        else:
+                            if not self.data[0].empty:
+                                self.job_log_item(
+                                    "Program '{0}' found {1} items to batch into an excel attachment"
+                                    .format(job_name, len(self.data[0])))
+                                self.job_files.append([job_name, job_name, self.data[0]])
 
-                    if proc:
+                            self.sub_end_time.append(datetime.datetime.now())
+                            self.sub_error.append(None)
+                    elif proc:
                         for my_line in stderr.decode("utf-8").split('\n'):
                             lines.append(my_line.rstrip())
 
@@ -306,13 +331,13 @@ class JobConfig(object):
                             self.sub_end_time.append(datetime.datetime.now())
                         else:
                             self.job_log_item("{0} '{1}' failed [ECode {2}] - {3}"
-                                              .format(sub_job_type, os.path.basename(sub_job[0]), proc.returncode,
+                                              .format(sub_job_type, job_name, proc.returncode,
                                                       '. '.join(lines)))
                             self.sub_error.append(proc.returncode)
                             self.sub_end_time.append(None)
                 else:
                     self.job_log_item("{0} '{1}' failed [ECode 00x01] - Filepath was not found for file"
-                                      .format(sub_job_type, os.path.basename(sub_job[0])))
+                                      .format(sub_job_type, job_name))
                     self.sub_end_time.append(None)
                     self.sub_error.append('00x01')
             except Exception as e:
@@ -321,10 +346,19 @@ class JobConfig(object):
                     self.sub_error.append(type(e).__name__)
 
                 self.job_log_item("{0} '{1}' failed [ECode {2}] - {3}"
-                                  .format(sub_job_type, os.path.basename(sub_job[0]), type(e).__name__, str(e)))
+                                  .format(sub_job_type, job_name, type(e).__name__, str(e)))
                 self.list_chksum(type(e).__name__)
                 global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
                 pass
+
+    def exec_sql(self, sql_path):
+        with portalocker.Lock(sql_path, 'r') as f:
+            query = f.read()
+            
+        if query:
+            self.data = self.asql.execute(str_txt=query, execute=True, ret_err=True)
+        else:
+            self.data = [pd.DataFrame(), '00x03', 'File has no data to execute']
 
     def exec_proc(self, job):
         self.job_log_item("Grabbing data from Stored Procedure '{0}'".format(job))
