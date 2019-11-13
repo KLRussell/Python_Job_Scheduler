@@ -627,8 +627,10 @@ class SQLHandle:
         df = pd.DataFrame()
 
         try:
-            if proc:
+            if proc and params:
                 str_txt = 'EXEC {0} {1}'.format(str_txt, params)
+            elif proc:
+                str_txt = 'EXEC {0}'.format(str_txt)
 
             if execute:
                 with closing(self.raw_engine.cursor()) as cursor:
@@ -639,7 +641,7 @@ class SQLHandle:
                     while result.nextset():
                         self.__store_dataset(result)
 
-                    if len(self.dataset) == 1:
+                    if len(self.dataset) == 1 and not self.dataset[0].empty:
                         df = self.dataset[0]
                     elif len(self.dataset) > 1:
                         df = self.dataset

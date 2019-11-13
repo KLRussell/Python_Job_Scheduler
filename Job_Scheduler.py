@@ -259,8 +259,8 @@ class JobConfig(object):
 
                     if self.data[1]:
                         self.job_log_item("{0} '{1}' failed [ECode {2}] - {3}"
-                                          .format(sub_job_type, sub_job[0], self.data[0], self.data[1]))
-                        self.sub_error.append(self.data[0])
+                                          .format(sub_job_type, sub_job[0], self.data[1], self.data[2]))
+                        self.sub_error.append(self.data[1])
                         self.sub_end_time.append(None)
                     else:
                         if not self.data[0].empty:
@@ -338,6 +338,7 @@ class JobConfig(object):
                 if not os.path.exists(self.file_path):
                     break
 
+            self.job_log_item("Writing {0} files into '{1}'".format(len(self.job_files), self.file_path))
             with pd.ExcelWriter(self.file_path) as writer:
                 for fline, file in enumerate(self.job_files):
                     if not file[1]:
@@ -428,7 +429,7 @@ class JobConfig(object):
 
     def close_conn(self):
         if self.asql:
-            self.asql.close()
+            self.asql.close_conn()
 
 
 def check_settings():
@@ -484,6 +485,7 @@ def exec_job(class_obj):
     if class_obj:
         try:
             class_obj.start_job()
+            class_obj.export_files()
             class_obj.send_email()
         finally:
             class_obj.close_job()
