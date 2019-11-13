@@ -405,17 +405,17 @@ class LogHandle:
 
 
 class SQLHandle:
-    server = None
-    database = None
-    dsn = None
-    accdb_file = None
-    conn_type = None
-    raw_engine = None
-    engine = None
-    session = None
-    dataset = []
-
     def __init__(self, logobj=None, settingsobj=None, server=None, database=None, dsn=None, accdb_file=None):
+        self.server = None
+        self.database = None
+        self.dsn = None
+        self.accdb_file = None
+        self.conn_type = None
+        self.raw_engine = None
+        self.engine = None
+        self.session = None
+        self.dataset = []
+
         self.change_config(settingsobj, server, database, dsn, accdb_file)
         self.logobj = logobj
 
@@ -571,20 +571,21 @@ class SQLHandle:
             return self.raw_engine
 
     def tables(self):
-        try:
-            with closing(self.raw_engine.cursor()) as cursor:
-                if self.conn_type == 'accdb':
-                    tables = [[t.table_type, [t.table_cat, t.table_schem, t.table_name]]
-                              for t in cursor.tables() if 'msys' not in t.table_name.lower()]
-                else:
-                    tables = [[t.table_type, [t.table_cat, t.table_schem, t.table_name]] for t in cursor.tables()]
-        except:
-            self.__proc_errors()
-        else:
-            return tables
+        if self.raw_engine:
+            try:
+                with closing(self.raw_engine.cursor()) as cursor:
+                    if self.conn_type == 'accdb':
+                        tables = [[t.table_type, [t.table_cat, t.table_schem, t.table_name]]
+                                  for t in cursor.tables() if 'msys' not in t.table_name.lower()]
+                    else:
+                        tables = [[t.table_type, [t.table_cat, t.table_schem, t.table_name]] for t in cursor.tables()]
+            except:
+                self.__proc_errors()
+            else:
+                return tables
 
     def create_table(self, df, table):
-        if self.conn_type == 'alch' and not self.session:
+        if self.conn_type == 'alch' and not self.session and self.engine:
             try:
                 df.to_sql(
                     table,
@@ -597,7 +598,7 @@ class SQLHandle:
                 return True
 
     def upload_df(self, df, table, if_exists='append', index=True, index_label='linenumber'):
-        if self.conn_type == 'alch' and not self.session:
+        if self.conn_type == 'alch' and not self.session and self.engine:
             tbl = table.split('.')
 
             if len(tbl) == 2:
@@ -632,7 +633,7 @@ class SQLHandle:
             elif proc:
                 str_txt = 'EXEC {0}'.format(str_txt)
 
-            if execute:
+            if execute and self.raw_engine:
                 with closing(self.raw_engine.cursor()) as cursor:
                     self.dataset = []
                     result = cursor.execute(str_txt)
@@ -648,12 +649,12 @@ class SQLHandle:
 
                     self.__commit(self.raw_engine)
             else:
-                if self.conn_type == 'alch':
+                if self.conn_type == 'alch' and self.engine:
                     cursor = self.engine.execute(mysql.text(str_txt))
 
                     if cursor and cursor._saved_cursor.arraysize > 0:
                         df = pd.DataFrame(cursor.fetchall(), columns=cursor._metadata.keys)
-                else:
+                elif self.raw_engine:
                     df = sql.read_sql(str_txt, self.raw_engine)
         except SQLAlchemyError as e:
             if ret_err:
