@@ -496,6 +496,7 @@ def exec_job(class_obj):
 def exec_email(class_obj, err_msg):
     if class_obj:
         try:
+            class_obj.export_files()
             class_obj.send_email(error_msg=err_msg)
         finally:
             class_obj.close_job()
