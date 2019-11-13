@@ -66,7 +66,7 @@ class SettingsGUI:
         self.main.bind('<Destroy>', self.gui_cleanup)
 
     def gui_cleanup(self, event):
-        self.asql.close()
+        self.asql.close_conn()
 
     # Function to build GUI for settings
     def build_gui(self, header=None):

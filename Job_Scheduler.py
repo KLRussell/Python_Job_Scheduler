@@ -35,7 +35,7 @@ global_objs = grabobjs(main_dir, 'Job_Scheduler')
 
 
 class Email:
-    def __init__(self, job_config, job_results, error_msg=None):
+    def __init__(self, job_config, job_results, attach=None, error_msg=None):
         self.email_server = global_objs['Settings'].grab_item('Email_Server')
         self.email_port = global_objs['Settings'].grab_item('Email_Port')
         self.email_user = global_objs['Settings'].grab_item('Email_User')
@@ -47,7 +47,7 @@ class Email:
         self.server = None
         self.message = MIMEMultipart()
         self.body = list()
-        self.files = list()
+        self.file = attach
         self.body.append("Hello {0},\n".format(self.email_to.split('@')[0].title()))
 
         if error_msg:
@@ -109,10 +109,7 @@ class Email:
         return ' and '.join(date_list)
 
     def parse_results(self, job_results):
-        for sub_job_name, sub_job_type, sub_start_time, sub_job_file, sub_end_time, sub_error in job_results:
-            if sub_job_file:
-                self.files.append(sub_job_file)
-
+        for sub_job_name, sub_job_type, sub_start_time, sub_end_time, sub_error in job_results:
             if sub_end_time:
                 self.body.append('\t\u2022  {0} "{1}" <Succeeded Task> [{2}]'.format(
                     sub_job_type, sub_job_name, self.parse_time(sub_start_time, sub_end_time)))
@@ -156,9 +153,9 @@ class Email:
         self.message['Subject'] = self.subject
         self.message.attach(MIMEText('\n'.join(self.body)))
 
-        for file in self.files:
+        if self.file:
             part = MIMEBase('application', "octet-stream")
-            zip_filepath = self.zip_file(file)
+            zip_filepath = self.zip_file()
             zf = open(zip_filepath, 'rb')
 
             try:
@@ -170,18 +167,17 @@ class Email:
             finally:
                 zf.close()
 
-    @staticmethod
-    def zip_file(file):
+    def zip_file(self):
         zip_filepath = None
         i = 1
 
         while not zip_filepath:
             if i > 1:
-                zip_filepath = os.path.join(os.path.dirname(file), '{0}{1}.zip'.format(
-                                                     os.path.splitext(os.path.basename(file))[0], i))
+                zip_filepath = os.path.join(os.path.dirname(self.file), '{0}{1}.zip'.format(
+                                                     os.path.splitext(os.path.basename(self.file))[0], i))
             else:
-                zip_filepath = os.path.join(os.path.dirname(file), '{0}.zip'.format(
-                    os.path.splitext(os.path.basename(file))[0]))
+                zip_filepath = os.path.join(os.path.dirname(self.file), '{0}.zip'.format(
+                    os.path.splitext(os.path.basename(self.file))[0]))
 
             if os.path.exists(zip_filepath):
                 i += 1
@@ -190,10 +186,10 @@ class Email:
         zip_file = zipfile.ZipFile(zip_filepath, mode='w')
 
         try:
-            zip_file.write(file, os.path.basename(file))
+            zip_file.write(self.file, os.path.basename(self.file))
         finally:
             zip_file.close()
-            os.remove(file)
+            os.remove(self.file)
 
         return zip_filepath
 
@@ -202,7 +198,8 @@ class JobConfig(object):
     def __init__(self, job_config):
         self.sub_job_name = []
         self.sub_job_type = []
-        self.sub_job_file = []
+        self.job_files = []
+        self.file_path = None
         self.sub_start_time = []
         self.sub_end_time = []
         self.sub_error = []
@@ -258,21 +255,24 @@ class JobConfig(object):
 
             try:
                 if sub_job_type == 'Stored Procedure':
-                    attach_file = self.grab_batch(sub_job[0], sub_job[1])
+                    self.exec_proc(sub_job[0])
 
                     if self.data[1]:
                         self.job_log_item("{0} '{1}' failed [ECode {2}] - {3}"
                                           .format(sub_job_type, sub_job[0], self.data[0], self.data[1]))
                         self.sub_error.append(self.data[0])
                         self.sub_end_time.append(None)
-                    elif attach_file:
-                        self.sub_job_file.append(self.sub_job_file.append(self.write_batch(sub_job[0], sub_job[2])))
-                        self.sub_end_time.append(datetime.datetime.now())
-                        self.sub_error.append(None)
                     else:
+                        if not self.data[0].empty:
+                            self.job_log_item("Stored Procedure '{0}' found {1} items to batch into an excel attachment"
+                                              .format(sub_job[0], len(self.data[0])))
+                            self.job_files.append([sub_job[0], sub_job[2], self.data[0]])
+                        elif sub_job[1]:
+                            self.job_log_item("Stored Procedure '{0}' found no items to batch into an excel attachment"
+                                              .format(sub_job[0]))
+
                         self.sub_end_time.append(datetime.datetime.now())
                         self.sub_error.append(None)
-                        self.sub_job_file.append(None)
                 elif os.path.exists(sub_job[0]):
                     lines = []
                     ext = os.path.splitext(sub_job[0])[1].lower()
@@ -310,17 +310,13 @@ class JobConfig(object):
                                                       '. '.join(lines)))
                             self.sub_error.append(proc.returncode)
                             self.sub_end_time.append(None)
-
-                    self.sub_job_file.append(None)
                 else:
                     self.job_log_item("{0} '{1}' failed [ECode 00x01] - Filepath was not found for file"
                                       .format(sub_job_type, os.path.basename(sub_job[0])))
-                    self.sub_job_file.append(None)
                     self.sub_end_time.append(None)
                     self.sub_error.append('00x01')
             except Exception as e:
                 if len(self.sub_end_time) < len(self.sub_start_time):
-                    self.sub_job_file.append(None)
                     self.sub_end_time.append(None)
                     self.sub_error.append(type(e).__name__)
 
@@ -330,42 +326,26 @@ class JobConfig(object):
                 global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
                 pass
 
-    def grab_batch(self, job, attach):
-        if attach:
-            self.job_log_item("Grabbing data from Stored Procedure '{0}'".format(job))
-            self.data = self.asql.query2('''EXEC {0}'''.format(job))
+    def exec_proc(self, job):
+        self.job_log_item("Grabbing data from Stored Procedure '{0}'".format(job))
+        self.data = self.asql.execute(str_txt=job, execute=True, proc=True, ret_err=True)
 
-            if not self.data[0].empty:
-                return True
-        else:
-            self.data = pd.DataFrame()
-            self.data = self.asql.execute2('''EXEC {0}'''.format(job))
+    def export_files(self):
+        if len(self.job_files) > 0:
+            for file_num in range(0, 10000000000):
+                self.file_path = os.path.join(batcheddir, '{0}_{1}_{2}.xlsx'.format(
+                    datetime.datetime.now().__format__("%Y%m%d"), self.job_config['Job_Name'], file_num))
+                if not os.path.exists(self.file_path):
+                    break
 
-        return False
+            with pd.ExcelWriter(self.file_path) as writer:
+                for fline, file in enumerate(self.job_files):
+                    if not file[1]:
+                        file[1] = file[0]
 
-    def write_batch(self, job, attach_prefix):
-        if not self.data[0].empty:
-            self.job_log_item("Stored Procedure '{0}' found {1} items to batch. Proceeding to batch to excel"
-                              .format(job, len(self.data[0])))
-            i = 1
-            file = None
+                    file[2].to_excel(writer, index=False, sheet_name=file[1])
 
-            while not file:
-                if i > 1:
-                    file = os.path.join(batcheddir, '{0}_{1}{2}.xlsx'.format(
-                        datetime.datetime.now().__format__("%Y%m%d"), attach_prefix, i))
-                else:
-                    file = os.path.join(batcheddir, '{0}_{1}.xlsx'.format(
-                        datetime.datetime.now().__format__("%Y%m%d"), attach_prefix))
-
-                if os.path.exists(file):
-                    file = None
-                    i += 1
-
-            with pd.ExcelWriter(file) as writer:
-                self.data[0].to_excel(writer, index=False, sheet_name=datetime.datetime.now().__format__("%Y%m%d"))
-
-            return file
+            self.job_files = []
 
     def check_lists(self):
         for sub_job, sub_job_type in copy.deepcopy(self.job_config['Job_List']):
@@ -382,7 +362,6 @@ class JobConfig(object):
                 self.sub_start_time.append(None)
                 self.job_log_item("{0} '{1}' failed [ECode 00x02] - This task never processed"
                                   .format(sub_job_type, os.path.basename(sub_job[0])))
-                self.sub_job_file.append(None)
                 self.sub_end_time.append(None)
                 self.sub_error.append('00x02')
 
@@ -399,9 +378,6 @@ class JobConfig(object):
             return None
 
     def list_chksum(self, err_code='00x02'):
-        while len(self.sub_job_file) < len(self.sub_start_time):
-            self.sub_job_file.append(None)
-
         while len(self.sub_end_time) < len(self.sub_start_time):
             self.sub_end_time.append(None)
 
@@ -428,9 +404,8 @@ class JobConfig(object):
         else:
             self.job_log_item("Job '{0}' Completed successfully. Sending e-mail".format(self.job_config['Job_Name']))
 
-        package = zip(self.sub_job_name, self.sub_job_type, self.sub_start_time, self.sub_job_file, self.sub_end_time,
-                      self.sub_error)
-        obj = Email(job_config=self.job_config, job_results=package, error_msg=error_msg)
+        package = zip(self.sub_job_name, self.sub_job_type, self.sub_start_time, self.sub_end_time, self.sub_error)
+        obj = Email(job_config=self.job_config, job_results=package, attach=self.file_path, error_msg=error_msg)
         obj.email_connect()
 
         while email_trys < 4:

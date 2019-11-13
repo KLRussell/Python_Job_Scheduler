@@ -6,6 +6,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from sqlalchemy.exc import SQLAlchemyError
+from contextlib import closing
 from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import *
@@ -407,33 +408,73 @@ class SQLHandle:
     server = None
     database = None
     dsn = None
+    accdb_file = None
     conn_type = None
-    conn_str = None
-    session = False
+    raw_engine = None
     engine = None
-    conn = None
-    cursor = None
+    session = None
+    dataset = []
 
     def __init__(self, logobj=None, settingsobj=None, server=None, database=None, dsn=None, accdb_file=None):
-        if settingsobj:
-            if settingsobj.grab_item('Server'):
-                self.server = settingsobj.grab_item('Server').decrypt_text()
-            if settingsobj.grab_item('Database'):
-                self.database = settingsobj.grab_item('Database').decrypt_text()
-            if settingsobj.grab_item('DSN'):
-                self.dsn = settingsobj.grab_item('DSN').decrypt_text()
-        elif server and database:
-            self.server = server
-            self.database = database
-        elif dsn:
-            self.dsn = dsn
-        elif accdb_file:
-            self.accdb_file = accdb_file
-        else:
-            raise Exception('Invalid connection variables passed')
+        self.change_config(settingsobj, server, database, dsn, accdb_file)
+        self.logobj = logobj
 
-        if logobj:
-            self.logobj = logobj
+    def __connect_str(self):
+        if self.conn_type == 'alch':
+            assert(self.server and self.database)
+            p = quote_plus(
+                'DRIVER={};PORT={};SERVER={};DATABASE={};Trusted_Connection=yes;'.format(
+                    '{SQL Server Native Client 11.0}', '1433', self.server, self.database))
+
+            return '{}+pyodbc:///?odbc_connect={}'.format('mssql', p)
+        elif self.conn_type == 'sql':
+            assert(self.server and self.database)
+            return 'driver={0};server={1};database={2};autocommit=True;Trusted_Connection=yes'\
+                .format('{SQL Server}', self.server, self.database)
+        elif self.conn_type == 'accdb':
+            assert self.accdb_file
+            return 'DRIVER={};DBQ={};Exclusive=1'.format('{Microsoft Access Driver (*.mdb, *.accdb)}',
+                                                         self.accdb_file)
+        elif self.conn_type == 'dsn':
+            assert self.dsn
+            return 'DSN={};DATABASE=default;Trusted_Connection=Yes;'.format(self.dsn)
+        else:
+            raise Exception('Invalid conn_type specified')
+
+    def __proc_errors(self, err_code=None, err_desc=None):
+        if self.logobj:
+            if err_code and err_desc:
+                self.logobj.write_log('[Error Code {0}] - {1}'.format(err_code, err_desc))
+            else:
+                self.logobj.write_log(traceback.format_exc(), 'critical')
+        else:
+            if err_code and err_desc:
+                print('[Error Code {0}] - {1}'.format(err_code, err_desc))
+            else:
+                print(traceback.format_exc())
+
+    def __commit(self, engine):
+        try:
+            if engine and hasattr(engine, 'commit'):
+                engine.commit()
+        except:
+            self.__rollback(engine)
+
+    def __rollback(self, engine):
+        try:
+            if engine and hasattr(engine, 'rollback'):
+                engine.rollback()
+        except:
+            self.__proc_errors()
+            self.close_conn()
+
+    def __store_dataset(self, res_rowset):
+        try:
+            data = [tuple(t) for t in res_rowset.fetchall()]
+            cols = [column[0] for column in res_rowset.description]
+            self.dataset.append(pd.DataFrame(data, columns=cols))
+        except:
+            pass
 
     def change_config(self, settingsobj=None, server=None, database=None, dsn=None, accdb_file=None):
         if settingsobj:
@@ -450,255 +491,185 @@ class SQLHandle:
         else:
             raise Exception('Invalid connection variables passed')
 
-    def create_conn_str(self):
-        if self.conn_type == 'alch':
-            assert(self.server and self.database)
-            p = quote_plus(
-                'DRIVER={};PORT={};SERVER={};DATABASE={};Trusted_Connection=yes;'
-                    .format('{SQL Server Native Client 11.0}', '1433', self.server, self.database))
-
-            self.conn_str = '{}+pyodbc:///?odbc_connect={}'.format('mssql', p)
-        elif self.conn_type == 'sql':
-            assert(self.server and self.database)
-            self.conn_str = 'driver={0};server={1};database={2};autocommit=True;Trusted_Connection=yes'\
-                .format('{SQL Server}', self.server, self.database)
-        elif self.conn_type == 'accdb':
-            assert self.accdb_file
-            self.conn_str = 'DRIVER={};DBQ={};Exclusive=1'.format('{Microsoft Access Driver (*.mdb, *.accdb)}',
-                                                                  self.accdb_file)
-        elif self.conn_type == 'dsn':
-            assert self.dsn
-            self.conn_str = 'DSN={};DATABASE=default;Trusted_Connection=Yes;'.format(self.dsn)
-        else:
-            raise Exception('Invalid conn_type specified')
-
-    def test_conn(self, conn_type=None):
-        assert(conn_type or self.conn_type)
-        myreturn = False
-
-        if conn_type:
-            self.conn_type = conn_type
-
-        self.create_conn_str()
-
-        myquery = "SELECT 1 from sys.sysprocesses"
+    def connect(self, conn_type, test_conn=False, session=False, conn_timeout=3):
+        self.conn_type = conn_type
+        self.session = session
+        conn_str = self.__connect_str()
 
         try:
             if self.conn_type == 'alch':
-                self.engine = mysql.create_engine(self.conn_str)
-                obj = self.engine.execute(mysql.text(myquery))
-                if obj._saved_cursor.arraysize > 0:
-                    myreturn = True
+                self.raw_engine = mysql.create_engine(conn_str, connect_args={'timeout': conn_timeout,
+                                                                              'connect_timeout': conn_timeout})
+
+                try:
+                    self.raw_engine.connect()
+                except:
+                    self.__proc_errors()
+                    self.close_conn()
+                    return False
+                else:
+                    self.raw_engine = self.raw_engine.raw_connection()
+
+                self.engine = mysql.create_engine(conn_str, connect_args={'timeout': conn_timeout,
+                                                                          'connect_timeout': conn_timeout})
+
+                try:
+                    self.engine.connect()
+                except:
+                    self.__proc_errors()
+                    self.close_conn()
+                    return False
+                else:
+                    if self.session:
+                        self.engine = sessionmaker(bind=self.engine)
+                        self.engine = self.engine()
+                        self.engine._model_changes = {}
+
+                if test_conn:
+                    self.close_conn()
             else:
-                self.conn = pyodbc.connect(self.conn_str)
-                self.cursor = self.conn.cursor()
-                self.conn.commit()
+                self.raw_engine = pyodbc.connect(conn_str, connect_args={'timeout': conn_timeout,
+                                                                         'connect_timeout': conn_timeout})
+                try:
+                    self.raw_engine.commit()
+                except:
+                    self.__proc_errors()
+                    self.close_conn()
+                    return False
+        except Exception as e:
+            self.__proc_errors(err_code=type(e).__name__, err_desc=str(e))
+            self.close_conn()
+            return False
+        else:
+            if test_conn:
+                self.close_conn()
 
-                if self.conn_type == 'accdb' and len(self.get_accdb_tables()) > 0:
-                    myreturn = True
+            return True
+
+    def close_conn(self):
+        if self.raw_engine and hasattr(self.raw_engine, 'dispose'):
+            self.raw_engine.dispose()
+        elif self.raw_engine and hasattr(self.raw_engine, 'close'):
+            self.raw_engine.close()
+        else:
+            self.raw_engine = None
+
+        if self.engine and hasattr(self.engine, 'close'):
+            self.engine.close()
+        elif self.engine and hasattr(self.engine, 'dispose'):
+            self.engine.dispose()
+        else:
+            self.engine = None
+
+    def grab_sql_objs(self):
+        if self.engine:
+            return [self.engine, self.raw_engine]
+        elif self.raw_engine:
+            return self.raw_engine
+
+    def tables(self):
+        try:
+            with closing(self.raw_engine.cursor()) as cursor:
+                if self.conn_type == 'accdb':
+                    tables = [[t.table_type, [t.table_cat, t.table_schem, t.table_name]]
+                              for t in cursor.tables() if 'msys' not in t.table_name.lower()]
                 else:
-                    df = sql.read_sql(myquery, self.conn)
-
-                    if len(df) > 0:
-                        myreturn = True
+                    tables = [[t.table_type, [t.table_cat, t.table_schem, t.table_name]] for t in cursor.tables()]
         except:
-            pass
-        finally:
-            self.close()
-
-        return myreturn
-
-    def get_accdb_tables(self):
-        if self.conn_type == 'accdb':
-            mylist = []
-            ct = self.cursor.tables
-
-            for row in ct():
-                if 'msys' not in row.table_name.lower():
-                    mylist.append(row.table_name)
-
-            return mylist
-
-    def connect(self, conn_type):
-        assert (conn_type or self.conn_type)
-        self.conn_type = conn_type
-
-        if self.test_conn():
-            try:
-                if self.conn_type == 'alch':
-                    self.engine = mysql.create_engine(self.conn_str)
-                else:
-                    self.conn = pyodbc.connect(self.conn_str, autocommit=True)
-                    self.cursor = self.conn.cursor()
-                    self.conn.commit()
-            except:
-                self.close()
-                if self.logobj:
-                    self.logobj.write_log(traceback.format_exc(), 'critical')
-                else:
-                    print(traceback.format_exc())
-                raise Exception('Stopping script')
-        elif self.conn_type in ('alch', 'sql'):
-            self.server = None
-            self.database = None
-            raise Exception(
-                'Error 1 - Failed test connection to SQL Server. Server name {0} or database name {1} is incorrect'
-                    .format(self.server, self.database))
-        elif self.conn_type == 'accdb':
-            self.accdb_file = None
-            raise Exception(
-                'Error 1 - Failed test connection to access databse file {0}'.format(
-                    self.accdb_file))
+            self.__proc_errors()
         else:
-            self.dsn = None
-            raise Exception('Error 1 - Failed test connection to DSN connection {0}'.format(self.dsn))
+            return tables
 
-    def close(self):
-        if self.conn_type == 'alch':
-            if self.engine:
-                self.engine.dispose()
-        else:
-            if self.cursor:
-                self.cursor.close()
-
-            if self.conn:
-                self.conn.close()
-
-    def createsession(self):
-        if self.conn_type == 'alch':
-            try:
-                self.engine = sessionmaker(bind=self.engine)
-                self.engine = self.engine()
-                self.engine._model_changes = {}
-                self.session = True
-            except:
-                self.close()
-                if self.logobj:
-                    self.logobj.write_log(traceback.format_exc(), 'critical')
-                else:
-                    print(traceback.format_exc())
-                raise Exception('Stopping script')
-
-    def createtable(self, dataframe, sqltable):
+    def create_table(self, df, table):
         if self.conn_type == 'alch' and not self.session:
             try:
-                dataframe.to_sql(
-                    sqltable,
+                df.to_sql(
+                    table,
                     self.engine,
-                    if_exists='replace',
+                    if_exists='replace'
                 )
             except:
-                self.close()
-                if self.logobj:
-                    self.logobj.write_log(traceback.format_exc(), 'critical')
-                else:
-                    print(traceback.format_exc())
-                raise Exception('Stopping script')
-
-    def grabengine(self):
-        if self.conn_type == 'alch':
-            return self.engine
-        else:
-            return [self.cursor, self.conn]
-
-    def upload(self, dataframe, sqltable, index=True, index_label='linenumber'):
-        if self.conn_type == 'alch' and not self.session:
-            mytbl = sqltable.split(".")
-            try:
-                if len(mytbl) > 1:
-                    dataframe.to_sql(
-                        mytbl[1],
-                        self.engine,
-                        schema=mytbl[0],
-                        if_exists='append',
-                        index=index,
-                        index_label=index_label,
-                        chunksize=1000
-                    )
-                else:
-                    dataframe.to_sql(
-                        mytbl[0],
-                        self.engine,
-                        if_exists='replace',
-                        index=False,
-                        chunksize=1000
-                    )
+                self.__proc_errors()
+            else:
                 return True
+
+    def upload_df(self, df, table, if_exists='append', index=True, index_label='linenumber'):
+        if self.conn_type == 'alch' and not self.session:
+            tbl = table.split('.')
+
+            if len(tbl) == 2:
+                schema = tbl[0]
+                tbl_name = tbl[1]
+            else:
+                schema = None
+                tbl_name = table
+
+            try:
+                df.to_sql(
+                    tbl_name,
+                    self.engine,
+                    schema=schema,
+                    if_exists=if_exists,
+                    index=index,
+                    index_label=index_label,
+                    chunksize=1000
+                )
             except:
-                self.close()
-                if self.logobj:
-                    self.logobj.write_log(traceback.format_exc(), 'critical')
-                else:
-                    print(traceback.format_exc())
-                raise Exception('Stopping script')
-
-    def query2(self, query):
-        try:
-            if self.conn_type == 'alch':
-                obj = self.engine.execution_options(autocommit=True).execute(mysql.text(query))
-
-                if obj._saved_cursor.arraysize > 0:
-                    try:
-                        data = obj.fetchall()
-                        columns = obj._metadata.keys
-
-                        return [pd.DataFrame(data, columns=columns), None, None]
-                    except:
-                        return [pd.DataFrame(), None, None]
-                else:
-                    return [pd.DataFrame(), None, None]
-        except SQLAlchemyError as e:
-            return [pd.DataFrame(), e.code, str(e.__dict__['orig'])]
-
-    def query(self, query):
-        try:
-            if self.conn_type == 'alch':
-                obj = self.engine.execute(mysql.text(query))
-
-                if obj._saved_cursor.arraysize > 0:
-                    data = obj.fetchall()
-                    columns = obj._metadata.keys
-
-                    return pd.DataFrame(data, columns=columns)
-
+                self.__proc_errors()
+                self.close_conn()
             else:
-                df = sql.read_sql(query, self.conn)
+                return True
 
+    def execute(self, str_txt, params=None, execute=False, proc=False, ret_err=False):
+        df = pd.DataFrame()
+
+        try:
+            if proc:
+                str_txt = 'EXEC {0} {1}'.format(str_txt, params)
+
+            if execute:
+                with closing(self.raw_engine.cursor()) as cursor:
+                    self.dataset = []
+                    result = cursor.execute(str_txt)
+                    self.__store_dataset(result)
+
+                    while result.nextset():
+                        self.__store_dataset(result)
+
+                    if len(self.dataset) == 1:
+                        df = self.dataset[0]
+                    elif len(self.dataset) > 1:
+                        df = self.dataset
+
+                    self.__commit(self.raw_engine)
+            else:
+                if self.conn_type == 'alch':
+                    cursor = self.engine.execute(mysql.text(str_txt))
+
+                    if cursor and cursor._saved_cursor.arraysize > 0:
+                        df = pd.DataFrame(cursor.fetchall(), columns=cursor._metadata.keys)
+                else:
+                    df = sql.read_sql(str_txt, self.raw_engine)
+        except SQLAlchemyError as e:
+            if ret_err:
+                return [df, e.code, str(e.__dict__['orig'])]
+            else:
+                self.__proc_errors(err_code=e.code, err_desc=str(e.__dict__['orig']))
+        except pyodbc.Error as e:
+            if ret_err:
+                return [df, e.args[0], e.args[1]]
+            else:
+                self.__proc_errors(err_code=e.args[0], err_desc=e.args[1])
+        except (AttributeError, Exception) as e:
+            if ret_err:
+                return [df, type(e).__name__, str(e)]
+            else:
+                self.__proc_errors()
+        else:
+            if ret_err:
+                return [df, None, None]
+            else:
                 return df
-
-        except:
-            self.close()
-
-            if self.logobj:
-                self.logobj.write_log(traceback.format_exc(), 'critical')
-            else:
-                print(traceback.format_exc())
-            raise Exception('Stopping script')
-
-    def execute(self, query):
-        try:
-            if self.conn_type == 'alch':
-                self.engine.execution_options(autocommit=True).execute(mysql.text(query))
-            else:
-                self.cursor.execute(query)
-
-        except:
-            self.close()
-            if self.logobj:
-                self.logobj.write_log(traceback.format_exc(), 'critical')
-            else:
-                print(traceback.format_exc())
-            raise Exception('Stopping script')
-
-    def execute2(self, query):
-        try:
-            if self.conn_type == 'alch':
-                self.engine.execution_options(autocommit=True).execute(mysql.text(query))
-
-                return [None, None]
-
-        except SQLAlchemyError as e:
-            return [e.code, str(e.__dict__['orig'])]
 
 
 class ErrHandle:
