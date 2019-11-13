@@ -160,7 +160,7 @@ class SettingsGUI:
         fill_textbox('Settings', self.server, 'Server')
         fill_textbox('Settings', self.database, 'Database')
 
-        if not self.server.get() or not self.database.get() or not self.asql.test_conn('alch'):
+        if not self.server.get() or not self.database.get() or not self.asql.connect('alch', test_conn=True):
             self.eupass_txtbox.configure(state=DISABLED)
             self.euname_txtbox.configure(state=DISABLED)
             self.eport_txtbox.configure(state=DISABLED)
@@ -232,7 +232,7 @@ class SettingsGUI:
                  global_objs['Settings'].grab_item('Database') != self.database.get()):
             self.asql.change_config(server=self.server.get(), database=self.database.get())
 
-            if self.asql.test_conn('alch'):
+            if self.asql.connect('alch', test_conn=True):
                 add_setting('Settings', self.server.get(), 'Server')
                 add_setting('Settings', self.database.get(), 'Database')
                 state = True

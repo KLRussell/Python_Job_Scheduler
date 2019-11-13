@@ -478,9 +478,12 @@ class SQLHandle:
 
     def change_config(self, settingsobj=None, server=None, database=None, dsn=None, accdb_file=None):
         if settingsobj:
-            self.server = settingsobj.grab_item('Server').decrypt_text()
-            self.database = settingsobj.grab_item('Database').decrypt_text()
-            self.dsn = settingsobj.grab_item('DSN').decrypt_text()
+            if settingsobj.grab_item('Server'):
+                self.server = settingsobj.grab_item('Server').decrypt_text()
+            if settingsobj.grab_item('Database'):
+                self.database = settingsobj.grab_item('Database').decrypt_text()
+            if settingsobj.grab_item('DSN'):
+                self.dsn = settingsobj.grab_item('DSN').decrypt_text()
         elif server and database:
             self.server = server
             self.database = database
