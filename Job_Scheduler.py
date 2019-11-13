@@ -354,7 +354,7 @@ class JobConfig(object):
     def exec_sql(self, sql_path):
         with portalocker.Lock(sql_path, 'r') as f:
             query = f.read()
-            
+
         if query:
             self.data = self.asql.execute(str_txt=query, execute=True, ret_err=True)
         else:
