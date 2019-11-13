@@ -333,9 +333,10 @@ class JobConfig(object):
     def export_files(self):
         if len(self.job_files) > 0:
             for file_num in range(0, 10000000000):
-                self.file_path = os.path.join(batcheddir, '{0}_{1}_{2}.xlsx'.format(
+                self.file_path = os.path.join(batcheddir, '{0}_{1}_{2}'.format(
                     datetime.datetime.now().__format__("%Y%m%d"), self.job_config['Job_Name'], file_num))
-                if not os.path.exists(self.file_path):
+                if not os.path.exists('%s.zip' % self.file_path):
+                    self.file_path = '%s.xlsx' % self.file_path
                     break
 
             self.job_log_item("Writing {0} files into '{1}'".format(len(self.job_files), self.file_path))
