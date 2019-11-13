@@ -500,7 +500,7 @@ class SQLHandle:
         conn_str = self.__connect_str()
 
         try:
-            if self.conn_type == 'alch':
+            if self.conn_type == 'alch' and not self.raw_engine and not self.engine:
                 self.raw_engine = mysql.create_engine(conn_str, connect_args={'timeout': conn_timeout,
                                                                               'connect_timeout': conn_timeout})
 
@@ -530,7 +530,7 @@ class SQLHandle:
 
                 if test_conn:
                     self.close_conn()
-            else:
+            elif not self.engine and not self.raw_engine:
                 self.raw_engine = pyodbc.connect(conn_str, connect_args={'timeout': conn_timeout,
                                                                          'connect_timeout': conn_timeout})
                 try:

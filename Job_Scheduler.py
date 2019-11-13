@@ -356,12 +356,14 @@ class JobConfig(object):
             query = f.read()
 
         if query:
+            self.asql.connect('alch')
             self.data = self.asql.execute(str_txt=query, execute=True, ret_err=True)
         else:
             self.data = [pd.DataFrame(), '00x03', 'File has no data to execute']
 
     def exec_proc(self, job):
         self.job_log_item("Grabbing data from Stored Procedure '{0}'".format(job))
+        self.asql.connect('alch')
         self.data = self.asql.execute(str_txt=job, execute=True, proc=True, ret_err=True)
 
     def export_files(self):
