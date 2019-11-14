@@ -22,6 +22,8 @@ import traceback
 import copy
 import sys
 import portalocker
+import atexit
+import pathlib as pl
 
 if getattr(sys, 'frozen', False):
     from multiprocessing import freeze_support
@@ -601,7 +603,28 @@ def watch_jobs(job_thread, job_obj, job_timeout):
         return True
 
 
+def exit_handler(jobs_to_kill):
+    if len(jobs_to_kill) > 0:
+        for job_item in jobs_to_kill:
+            global_objs['Event_Log'].write_log("Job '{0}' was forcebly requested to be stopped by program exit"
+                                               .format(job_item[1].job_name()))
+            job_item[1].job_log_item("Failed execution because it was requested to be stopped by program exit")
+
+            if job_item[0].is_alive():
+                job_item[0].terminate()
+
+            job_item[1].close_conn()
+
+            for file in list(pl.Path(batcheddir).glob('*.xlsx')):
+                os.remove(file)
+
+    sys.exit(0)
+
+
 if __name__ == '__main__':
+    jobs = []
+    atexit.register(exit_handler, jobs)
+
     if getattr(sys, 'frozen', False):
         freeze_support()
 
@@ -610,7 +633,6 @@ if __name__ == '__main__':
     if check_settings():
         script_started = True
         jw_thread = None
-        jobs = []
         stop_job_list = []
 
         try:
@@ -662,6 +684,8 @@ if __name__ == '__main__':
                 sleep(10)
         except:
             global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
+        finally:
+            exit_handler(jobs)
     else:
         global_objs['Event_Log'].write_log(
             'Settings haven''t been established. Please run Job_Scheduler_Settings', 'error')

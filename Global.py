@@ -665,16 +665,21 @@ class SQLHandle:
                         df = self.dataset
 
                     self.__commit(self.cursor)
+
+                self.cursor = None
             elif not execute:
                 if self.conn_type == 'alch' and self.engine:
                     self.cursor = self.engine.execute(mysql.text(str_txt))
 
                     if self.cursor and self.cursor._saved_cursor.arraysize > 0:
                         df = pd.DataFrame(self.cursor.fetchall(), columns=self.cursor._metadata.keys)
+
+                    self.cursor = None
                 elif self.conn_type != 'alch' and self.raw_engine:
                     df = sql.read_sql(str_txt, self.raw_engine)
         except SQLAlchemyError as e:
             self.__rollback(self.cursor)
+            self.cursor = None
 
             if ret_err:
                 return [df, e.code, str(e.__dict__['orig'])]
@@ -682,6 +687,7 @@ class SQLHandle:
                 self.__proc_errors(err_code=e.code, err_desc=str(e.__dict__['orig']))
         except pyodbc.Error as e:
             self.__rollback(self.cursor)
+            self.cursor = None
 
             if ret_err:
                 return [df, e.args[0], e.args[1]]
@@ -689,6 +695,7 @@ class SQLHandle:
                 self.__proc_errors(err_code=e.args[0], err_desc=e.args[1])
         except (AttributeError, Exception) as e:
             self.__rollback(self.cursor)
+            self.cursor = None
 
             if ret_err:
                 return [df, type(e).__name__, str(e)]
