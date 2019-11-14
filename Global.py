@@ -414,6 +414,7 @@ class SQLHandle:
         self.raw_engine = None
         self.engine = None
         self.session = None
+        self.cursor = None
         self.dataset = []
 
         self.change_config(settingsobj, server, database, dsn, accdb_file)
@@ -494,7 +495,7 @@ class SQLHandle:
         else:
             raise Exception('Invalid connection variables passed')
 
-    def connect(self, conn_type, test_conn=False, session=False, conn_timeout=3):
+    def connect(self, conn_type, test_conn=False, session=False, conn_timeout=3, query_time_out=0):
         self.conn_type = conn_type
         self.session = session
         conn_str = self.__connect_str()
@@ -502,8 +503,9 @@ class SQLHandle:
         try:
             if self.conn_type == 'alch':
                 if not self.raw_engine:
-                    self.raw_engine = mysql.create_engine(conn_str, connect_args={'timeout': conn_timeout,
-                                                                                  'connect_timeout': conn_timeout})
+                    self.raw_engine = mysql.create_engine(
+                        conn_str, connect_args={'timeout': conn_timeout, 'connect_timeout': conn_timeout,
+                                                'options': '-c statement_timeout=%s' % query_time_out})
 
                     try:
                         self.raw_engine.connect()
@@ -515,8 +517,9 @@ class SQLHandle:
                         self.raw_engine = self.raw_engine.raw_connection()
 
                 if not self.engine:
-                    self.engine = mysql.create_engine(conn_str, connect_args={'timeout': conn_timeout,
-                                                                              'connect_timeout': conn_timeout})
+                    self.engine = mysql.create_engine(
+                        conn_str, connect_args={'timeout': conn_timeout, 'connect_timeout': conn_timeout,
+                                                'options': '-c statement_timeout=%s' % query_time_out})
 
                     try:
                         self.engine.connect()
@@ -533,8 +536,9 @@ class SQLHandle:
                 if test_conn:
                     self.close_conn()
             elif not self.engine and not self.raw_engine:
-                self.raw_engine = pyodbc.connect(conn_str, connect_args={'timeout': conn_timeout,
-                                                                         'connect_timeout': conn_timeout})
+                self.raw_engine = pyodbc.connect(
+                        conn_str, connect_args={'timeout': conn_timeout, 'connect_timeout': conn_timeout,
+                                                'options': '-c statement_timeout=%s' % query_time_out})
                 try:
                     self.raw_engine.commit()
                 except:
@@ -551,9 +555,15 @@ class SQLHandle:
 
             return True
 
+    def close_cursor(self):
+        if self.cursor and hasattr(self.cursor, 'cancel'):
+            self.cursor.cancel()
+
+        self.__rollback(self.cursor)
+        self.cursor = None
+
     def close_conn(self):
-        self.__rollback(self.raw_engine)
-        self.__rollback(self.engine)
+        self.close_cursor()
 
         if self.raw_engine and hasattr(self.raw_engine, 'close'):
             self.raw_engine.close()
@@ -641,9 +651,9 @@ class SQLHandle:
                 str_txt = 'EXEC {0}'.format(str_txt)
 
             if execute and self.raw_engine:
-                with closing(self.raw_engine.cursor()) as cursor:
+                with closing(self.raw_engine.cursor()) as self.cursor:
                     self.dataset = []
-                    result = cursor.execute(str_txt)
+                    result = self.cursor.execute(str_txt)
                     self.__store_dataset(result)
 
                     while result.nextset():
@@ -654,26 +664,32 @@ class SQLHandle:
                     elif len(self.dataset) > 1:
                         df = self.dataset
 
-                    self.__commit(self.raw_engine)
-            else:
+                    self.__commit(self.cursor)
+            elif not execute:
                 if self.conn_type == 'alch' and self.engine:
-                    cursor = self.engine.execute(mysql.text(str_txt))
+                    self.cursor = self.engine.execute(mysql.text(str_txt))
 
-                    if cursor and cursor._saved_cursor.arraysize > 0:
-                        df = pd.DataFrame(cursor.fetchall(), columns=cursor._metadata.keys)
-                elif self.raw_engine:
+                    if self.cursor and self.cursor._saved_cursor.arraysize > 0:
+                        df = pd.DataFrame(self.cursor.fetchall(), columns=self.cursor._metadata.keys)
+                elif self.conn_type != 'alch' and self.raw_engine:
                     df = sql.read_sql(str_txt, self.raw_engine)
         except SQLAlchemyError as e:
+            self.__rollback(self.cursor)
+
             if ret_err:
                 return [df, e.code, str(e.__dict__['orig'])]
             else:
                 self.__proc_errors(err_code=e.code, err_desc=str(e.__dict__['orig']))
         except pyodbc.Error as e:
+            self.__rollback(self.cursor)
+
             if ret_err:
                 return [df, e.args[0], e.args[1]]
             else:
                 self.__proc_errors(err_code=e.args[0], err_desc=e.args[1])
         except (AttributeError, Exception) as e:
+            self.__rollback(self.cursor)
+
             if ret_err:
                 return [df, type(e).__name__, str(e)]
             else:

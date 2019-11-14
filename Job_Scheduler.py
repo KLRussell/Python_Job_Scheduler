@@ -1,5 +1,6 @@
 from Global import grabobjs
 from Global import ShelfHandle
+from Global import SQLHandle
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
@@ -196,7 +197,7 @@ class Email:
 
 
 class JobConfig(object):
-    def __init__(self, job_config):
+    def __init__(self, job_config, time_out):
         self.sub_job_name = []
         self.sub_job_type = []
         self.job_files = []
@@ -205,10 +206,11 @@ class JobConfig(object):
         self.sub_end_time = []
         self.sub_error = []
         self.data = pd.DataFrame()
-        self.asql = global_objs['SQL']
+        self.asql = SQLHandle(logobj=global_objs['Event_Log'], settingsobj=global_objs['Settings'])
         self.job_config = job_config
         self.job_log = ShelfHandle(os.path.join(joblogsdir, job_config['Job_Name']))
         self.job_log.read_shelf()
+        self.time_out = time_out
 
     def close_job(self):
         fconfig = None
@@ -350,20 +352,28 @@ class JobConfig(object):
                 global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
                 pass
 
+    def get_timeout(self):
+        if self.time_out:
+            return (self.time_out - datetime.datetime.now()).total_seconds()
+        else:
+            return 0
+
     def exec_sql(self, sql_path):
         with portalocker.Lock(sql_path, 'r') as f:
             query = f.read()
 
         if query:
-            self.asql.connect('alch')
+            self.asql.connect('alch', query_time_out=self.get_timeout())
             self.data = self.asql.execute(str_txt=query, execute=True, ret_err=True)
+            self.asql.close_conn()
         else:
             self.data = [pd.DataFrame(), '00x03', 'File has no data to execute']
 
     def exec_proc(self, job):
         self.job_log_item("Grabbing data from Stored Procedure '{0}'".format(job))
-        self.asql.connect('alch')
+        self.asql.connect('alch', query_time_out=self.get_timeout())
         self.data = self.asql.execute(str_txt=job, execute=True, proc=True, ret_err=True)
+        self.asql.close_conn()
 
     def export_files(self):
         if len(self.job_files) > 0:
@@ -622,20 +632,20 @@ if __name__ == '__main__':
                         if new_config:
                             global_objs['Event_Log'].write_log("Starting Job '%s'" % config['Job_Name'])
                             update_settings = True
-                            new_config['Start_Time'] = datetime.datetime.now()
-                            myobj = manager.JobConfig(new_config)
-                            configs[line] = new_config
 
+                            if int(new_config['Job_Timeout'][0]) > 0 or int(new_config['Job_Timeout'][1]) > 0:
+                                timeout = datetime.datetime.now() + datetime.timedelta(
+                                    hours=int(new_config['Job_Timeout'][0]), minutes=int(new_config['Job_Timeout'][1]))
+                            else:
+                                timeout = None
+
+                            new_config['Start_Time'] = datetime.datetime.now()
+                            myobj = manager.JobConfig(new_config, timeout)
+                            configs[line] = new_config
                             j = Process(target=exec_job, args=[myobj])
                             j.daemon = True
                             j.start()
-
-                            if int(new_config['Job_Timeout'][0]) > 0 or int(new_config['Job_Timeout'][1]) > 0:
-                                jw_thread = [j, myobj, datetime.datetime.now() + datetime.timedelta(
-                                    hours=int(new_config['Job_Timeout'][0]), minutes=int(new_config['Job_Timeout'][1]))]
-                            else:
-                                jw_thread = [j, myobj, None]
-
+                            jw_thread = [j, myobj, timeout]
                             jobs.append(jw_thread)
 
                     if script_started:
