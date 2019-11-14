@@ -603,6 +603,11 @@ def watch_jobs(job_thread, job_obj, job_timeout):
         return True
 
 
+def attach_cleanup():
+    for file in list(pl.Path(batcheddir).glob('*.xlsx')):
+        os.remove(file)
+
+
 def exit_handler(jobs_to_kill):
     if len(jobs_to_kill) > 0:
         for job_item in jobs_to_kill:
@@ -615,15 +620,14 @@ def exit_handler(jobs_to_kill):
 
             job_item[1].close_conn()
 
-            for file in list(pl.Path(batcheddir).glob('*.xlsx')):
-                os.remove(file)
-
+    attach_cleanup()
     sys.exit(0)
 
 
 if __name__ == '__main__':
     jobs = []
     atexit.register(exit_handler, jobs)
+    attach_cleanup()
 
     if getattr(sys, 'frozen', False):
         freeze_support()
