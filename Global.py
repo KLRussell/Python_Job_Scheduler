@@ -552,19 +552,20 @@ class SQLHandle:
             return True
 
     def close_conn(self):
+        if self.raw_engine and hasattr(self.raw_engine, 'close'):
+            self.raw_engine.close()
+
         if self.raw_engine and hasattr(self.raw_engine, 'dispose'):
             self.raw_engine.dispose()
-        elif self.raw_engine and hasattr(self.raw_engine, 'close'):
-            self.raw_engine.close()
-        else:
-            self.raw_engine = None
 
         if self.engine and hasattr(self.engine, 'close'):
             self.engine.close()
-        elif self.engine and hasattr(self.engine, 'dispose'):
+
+        if self.engine and hasattr(self.engine, 'dispose'):
             self.engine.dispose()
-        else:
-            self.engine = None
+
+        self.engine = None
+        self.raw_engine = None
 
     def grab_sql_objs(self):
         if self.engine:
