@@ -552,6 +552,9 @@ class SQLHandle:
             return True
 
     def close_conn(self):
+        self.__rollback(self.raw_engine)
+        self.__rollback(self.engine)
+
         if self.raw_engine and hasattr(self.raw_engine, 'close'):
             self.raw_engine.close()
 
