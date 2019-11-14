@@ -566,6 +566,7 @@ class SQLHandle:
 
         self.engine = None
         self.raw_engine = None
+        self.session = False
 
     def grab_sql_objs(self):
         if self.engine:
