@@ -388,7 +388,7 @@ class JobConfig(object):
 
             self.job_log_item("Writing {0} files into '{1}'".format(len(self.job_files), self.file_path))
             with pd.ExcelWriter(self.file_path) as writer:
-                for fline, file in enumerate(self.job_files):
+                for file in self.job_files:
                     if not file[1]:
                         file[1] = file[0]
 
