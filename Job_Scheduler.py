@@ -12,7 +12,10 @@ from multiprocessing.managers import BaseManager
 from subprocess import Popen, PIPE
 from Job_Scheduler_Settings import next_run_date
 from Job_Scheduler_Settings import add_setting
+from ctypes import windll, c_ushort, byref
 
+import platform
+import re
 import smtplib
 import zipfile
 import os
@@ -36,6 +39,7 @@ main_dir = os.path.dirname(curr_dir)
 batcheddir = os.path.join(main_dir, '02_Attachments')
 joblogsdir = os.path.join(main_dir, '05_Job_Logs')
 global_objs = grabobjs(main_dir, 'Job_Scheduler')
+powershell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
 
 
 class Email:
@@ -291,7 +295,7 @@ class JobConfig(object):
                                      stdout=PIPE, stderr=PIPE)
                         stdout, stderr = proc.communicate()
                     elif ext == '.ps1':
-                        proc = Popen(['powershell.exe', ". '{0}' {1}".format(sub_job[0], sub_job[1])], stdin=PIPE,
+                        proc = Popen([powershell, ". '{0}' {1}".format(sub_job[0], sub_job[1])], stdin=PIPE,
                                      stdout=PIPE, stderr=PIPE)
                         stdout, stderr = proc.communicate()
                     elif ext == '.vbs':
@@ -306,7 +310,7 @@ class JobConfig(object):
                         stderr = None
                         self.exec_sql(sub_job[0])
                     else:
-                        proc = Popen(['powershell.exe', "'{0}' {1}".format(sub_job[0], sub_job[1])],
+                        proc = Popen([powershell, "'{0}' {1}".format(sub_job[0], sub_job[1])],
                                      stdin=PIPE, stdout=PIPE, stderr=PIPE)
                         stdout, stderr = proc.communicate()
 
@@ -480,6 +484,20 @@ class JobConfig(object):
             self.asql.close_conn()
 
 
+def is_syswow64_process():
+    if platform.architecture()[0] != '64bit':
+        return False
+
+    this_process = windll.kernel32.GetCurrentProcess()
+    proc_type, platform_type = c_ushort(), c_ushort()
+    wow64_call = windll.kernel32.IsWow64Process2(this_process, byref(proc_type), byref(platform_type))
+
+    if wow64_call == 0:
+        raise Exception("Problem querying kernel32!IsWow64Process2")
+
+    return proc_type.value == 0
+
+
 def check_settings():
     if not os.path.exists(batcheddir):
         os.makedirs(batcheddir)
@@ -628,6 +646,9 @@ if __name__ == '__main__':
     jobs = []
     atexit.register(exit_handler, jobs)
     attach_cleanup()
+
+    if is_syswow64_process():
+        powershell = re.sub("(?i)syswow64|system32", "sysnative", powershell)
 
     if getattr(sys, 'frozen', False):
         freeze_support()
