@@ -466,7 +466,6 @@ class SQLHandle:
             if engine and hasattr(engine, 'rollback'):
                 engine.rollback()
         except:
-            self.__proc_errors()
             self.close_conn()
 
     def __store_dataset(self, res_rowset):
@@ -678,29 +677,32 @@ class SQLHandle:
                 elif self.conn_type != 'alch' and self.raw_engine:
                     df = sql.read_sql(str_txt, self.raw_engine)
         except SQLAlchemyError as e:
+            err = [df, e.code, str(e.__dict__['orig'])]
             self.__rollback(self.cursor)
             self.cursor = None
 
             if ret_err:
-                return [df, e.code, str(e.__dict__['orig'])]
+                return err
             else:
-                self.__proc_errors(err_code=e.code, err_desc=str(e.__dict__['orig']))
+                self.__proc_errors(err_code=err[1], err_desc=err[2])
         except pyodbc.Error as e:
+            err = [df, e.args[0], e.args[1]]
             self.__rollback(self.cursor)
             self.cursor = None
 
             if ret_err:
-                return [df, e.args[0], e.args[1]]
+                return err
             else:
-                self.__proc_errors(err_code=e.args[0], err_desc=e.args[1])
+                self.__proc_errors(err_code=err[1], err_desc=err[2])
         except (AttributeError, Exception) as e:
+            err = [df, type(e).__name__, str(e)]
             self.__rollback(self.cursor)
             self.cursor = None
 
             if ret_err:
-                return [df, type(e).__name__, str(e)]
+                return err
             else:
-                self.__proc_errors()
+                self.__proc_errors(err_code=err[1], err_desc=err[2])
         else:
             if ret_err:
                 return [df, None, None]
