@@ -361,6 +361,8 @@ class JobConfig(object):
             return 0
 
     def exec_sql(self, sql_path):
+        self.job_log_item("Executing SQL File '{0}'".format(os.path.basename(sql_path)))
+
         with portalocker.Lock(sql_path, 'r') as f:
             query = f.read()
 
@@ -372,7 +374,7 @@ class JobConfig(object):
             self.data = [pd.DataFrame(), '00x03', 'File has no data to execute']
 
     def exec_proc(self, job):
-        self.job_log_item("Grabbing data from Stored Procedure '{0}'".format(job))
+        self.job_log_item("Executing Stored Procedure '{0}'".format(job))
         self.asql.connect('alch', query_time_out=self.get_timeout())
         self.data = self.asql.execute(str_txt=job, execute=True, proc=True, ret_err=True)
         self.asql.close_conn()
