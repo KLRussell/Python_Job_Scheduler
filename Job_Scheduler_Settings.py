@@ -34,7 +34,8 @@ main_dir = os.path.dirname(curr_dir)
 joblogsdir = os.path.join(main_dir, '05_Job_Logs')
 joblogsexpdir = os.path.join(main_dir, '06_Job_Logs_Export')
 global_objs = grabobjs(main_dir, 'Job_Scheduler')
-icon_path = os.path.join(ico_dir, '%s.ico' % os.path.splitext(os.path.basename(application_path))[0])
+icon_path = os.path.join(ico_dir, 'Job_Scheduler_Settings.ico')
+# icon_path = os.path.join(ico_dir, '%s.ico' % os.path.splitext(os.path.basename(application_path))[0])
 
 
 class SettingsGUI:
