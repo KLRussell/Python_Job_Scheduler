@@ -39,6 +39,8 @@ global_objs = grabobjs(main_dir, 'Job_Scheduler')
 
 
 class Email:
+    server = None
+
     def __init__(self, job_config, job_results, attach=None, error_msg=None):
         self.email_server = global_objs['Settings'].grab_item('Email_Server')
         self.email_port = global_objs['Settings'].grab_item('Email_Port')
@@ -130,10 +132,13 @@ class Email:
                 self.server.starttls()
                 self.server.ehlo()
                 self.server.login(self.email_user.decrypt_text(), self.email_pass.decrypt_text())
-            except:
+            except Exception as e:
                 self.email_close()
-        except:
-            pass
+                return [False, type(e).__name__, str(e)]
+            else:
+                return [True, None, None]
+        except Exception as e:
+            return [False, type(e).__name__, str(e)]
 
     def email_send(self):
         if self.server and hasattr(self.server, 'sendmail'):
@@ -462,16 +467,25 @@ class JobConfig(object):
         while email_trys < 4:
             email_trys += 1
             obj = Email(job_config=self.job_config, job_results=package, attach=self.file_path, error_msg=error_msg)
-            obj.email_connect()
 
             try:
-                obj.package_email()
-                if obj.email_send():
-                    self.job_log_item("Email has been successfully sent")
-                    email_trys = 5
+                login = obj.email_connect()
+
+                if login[0]:
+                    obj.package_email()
+
+                    if obj.email_send():
+                        self.job_log_item("Email has been successfully sent")
+                        email_trys = 5
+                    else:
+                        self.job_log_item("Job '{0}' failed sending e-mail. retrying again"
+                                          .format(self.job_config['Job_Name']))
                 else:
-                    self.job_log_item("Job '{0}' failed sending e-mail. retrying again"
-                                      .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
+                    global_objs['Event_Log'].write_log('Failed e-mail connection [ECode {0}] - {1}'.format(
+                        login[1], login[2]))
+                    self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}".format(
+                        self.job_config['Job_Name'], login[1], login[2]))
+                    email_trys = 5
             except Exception as e:
                 self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}"
                                   .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
