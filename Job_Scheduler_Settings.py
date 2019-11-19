@@ -1419,12 +1419,10 @@ class JobListGUI:
                     job_enabled = False
                     button_name = 'Enable'
                     action_name = 'Disabled'
-                    self.job_instant_action_button.configure(state=DISABLED)
                 else:
                     job_enabled = True
                     button_name = 'Disable'
                     action_name = 'Enabled'
-                    self.job_instant_action_button.configure(state=NORMAL)
                     freq_list, freq_days_of_week_list, freq_start_dt_list, freq_missed_run_list,\
                     freq_prev_run_list, freq_next_run_list = zip(*copy.deepcopy(config_found['Job_Schedule']))
                     freq_list = list(freq_list)
@@ -1470,7 +1468,8 @@ class JobListGUI:
                     config_found = config
                     break
 
-            if config_found and config_found['Job_Controls'][0]:
+            if config_found:
+                job_enabled = config_found['Job_Controls'][0]
                 job_status = config_found['Job_Controls'][1]
                 job_instant_action = config_found['Job_Controls'][2]
 
@@ -1487,7 +1486,7 @@ class JobListGUI:
                     button_text = 'Stop Job'
                     action_text = 'Started'
 
-                config_found['Job_Controls'] = [True, job_status, job_instant_action]
+                config_found['Job_Controls'] = [job_enabled, job_status, job_instant_action]
                 self.configs[sel] = config_found
                 add_setting('Local_Settings', self.configs, 'Job_Configs', False)
                 self.job_instant_action_button.configure(text=button_text)

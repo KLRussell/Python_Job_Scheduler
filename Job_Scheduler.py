@@ -514,7 +514,7 @@ def repackage_freq(my_config, freq_line, next_run):
     next_run_list[freq_line] = next_run
     my_config['Job_Schedule'] = zip(freq_list, days_of_week, freq_start_dt_list, freq_missed_run_list, prev_run_list,
                                     next_run_list)
-    my_config['Job_Controls'] = [True, True, 0]
+    my_config['Job_Controls'] = [my_config['Job_Controls'][0], True, 0]
     return my_config
 
 
@@ -523,7 +523,7 @@ def val_exec(my_config, sstarted):
     job_schedule = copy.deepcopy(my_config['Job_Schedule'])
     job_controls = my_config['Job_Controls']
 
-    if job_controls[0]:
+    if job_controls[0] or (not job_controls[1] and job_controls[2] == 2) or (sstarted and job_controls[1]):
         for freq, days_of_week, freq_start_dt, freq_missed_run, prev_run, next_run in job_schedule:
             freq_line += 1
 
