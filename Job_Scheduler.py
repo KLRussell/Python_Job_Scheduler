@@ -136,7 +136,9 @@ class Email:
             pass
 
     def email_send(self):
-        self.server.sendmail(self.email_from, self.email_to, str(self.message))
+        if self.server and hasattr(self.server, 'sendmail'):
+            self.server.sendmail(self.email_from, self.email_to, str(self.message))
+            return True
 
     def email_close(self):
         if self.server:
@@ -456,19 +458,22 @@ class JobConfig(object):
             self.job_log_item("Job '{0}' Completed successfully. Sending e-mail".format(self.job_config['Job_Name']))
 
         package = zip(self.sub_job_name, self.sub_job_type, self.sub_start_time, self.sub_end_time, self.sub_error)
-        obj = Email(job_config=self.job_config, job_results=package, attach=self.file_path, error_msg=error_msg)
-        obj.email_connect()
 
         while email_trys < 4:
             email_trys += 1
+            obj = Email(job_config=self.job_config, job_results=package, attach=self.file_path, error_msg=error_msg)
+            obj.email_connect()
 
             try:
                 obj.package_email()
-                obj.email_send()
-                self.job_log_item("Email has been successfully sent")
-                email_trys = 5
+                if obj.email_send():
+                    self.job_log_item("Email has been successfully sent")
+                    email_trys = 5
+                else:
+                    self.job_log_item("Job '{0}' failed sending e-mail. retrying again"
+                                      .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
             except Exception as e:
-                self.job_log_item("Job '{0}' failed e-mail sending [ECode {1}] - {2}"
+                self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}"
                                   .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
                 global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
                 sleep(5)
