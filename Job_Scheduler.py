@@ -12,6 +12,7 @@ from multiprocessing.managers import BaseManager
 from subprocess import Popen, PIPE
 from Job_Scheduler_Settings import next_run_date
 from Job_Scheduler_Settings import add_setting
+from dateutil import relativedelta
 
 import smtplib
 import zipfile
@@ -220,6 +221,7 @@ class JobConfig(object):
         self.job_log = ShelfHandle(os.path.join(joblogsdir, job_config['Job_Name']))
         self.job_log.read_shelf()
         self.time_out = time_out
+        self.trim_job_logs()
 
     def close_job(self):
         fconfig = None
@@ -240,6 +242,20 @@ class JobConfig(object):
 
     def job_name(self):
         return self.job_config['Job_Name']
+
+    def trim_job_logs(self):
+        log_trimmed = False
+        trim_date = datetime.datetime.now()
+        trim_date = trim_date - relativedelta.relativedelta(months=1)
+        trim_date = trim_date.__format__("%Y%m%d")
+
+        for key in self.job_log.get_keys():
+            if key < trim_date:
+                log_trimmed = True
+                self.job_log.del_item(key)
+
+        if log_trimmed:
+            self.job_log.write_shelf()
 
     def job_log_item(self, log_item):
         assert log_item
