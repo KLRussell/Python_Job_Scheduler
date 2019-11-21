@@ -246,8 +246,7 @@ class JobConfig(object):
     def trim_job_logs(self):
         log_trimmed = False
         trim_date = datetime.datetime.now()
-        trim_date = trim_date - relativedelta.relativedelta(months=1)
-        trim_date = trim_date.__format__("%Y%m%d")
+        trim_date = (trim_date - relativedelta.relativedelta(months=1)).__format__("%Y%m%d")
 
         for key in self.job_log.get_keys():
             if key < trim_date:
