@@ -480,12 +480,13 @@ class JobConfig(object):
                     else:
                         self.job_log_item("Job '{0}' failed sending e-mail. retrying again"
                                           .format(self.job_config['Job_Name']))
+                        sleep(5)
                 else:
                     global_objs['Event_Log'].write_log('Failed e-mail connection [ECode {0}] - {1}'.format(
                         login[1], login[2]))
                     self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}".format(
                         self.job_config['Job_Name'], login[1], login[2]))
-                    email_trys = 5
+                    sleep(5)
             except Exception as e:
                 self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}"
                                   .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
