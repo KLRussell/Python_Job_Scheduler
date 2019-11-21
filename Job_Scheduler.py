@@ -481,7 +481,8 @@ class JobConfig(object):
 
         while email_trys < 4:
             email_trys += 1
-            obj = Email(job_config=self.job_config, job_results=package, attach=self.file_path, error_msg=error_msg)
+            obj = Email(job_config=copy.deepcopy(self.job_config), job_results=copy.deepcopy(package),
+                        attach=copy.copy(self.file_path), error_msg=copy.copy(error_msg))
 
             try:
                 login = obj.email_connect()
