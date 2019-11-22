@@ -273,33 +273,36 @@ class ShelfHandle:
 
         shelf = shelve_lock.open(self.file)
 
-        if len(shelf) > 0:
-            for k, v in shelf.items():
-                self.shelf_data[k] = v
-
-        shelf.close()
+        try:
+            if len(shelf) > 0:
+                for k, v in shelf.items():
+                    self.shelf_data[k] = v
+        finally:
+            shelf.close()
 
     def write_shelf(self):
         shelf = shelve_lock.open(self.file)
 
-        if len(self.rem_keys) > 0:
-            for k in self.rem_keys:
-                if k in shelf.keys():
-                    del shelf[k]
+        try:
+            if len(self.rem_keys) > 0:
+                for k in self.rem_keys:
+                    if k in shelf.keys():
+                        del shelf[k]
 
-        if len(self.add_keys) > 0:
-            for key in self.add_keys:
-                shelf[key] = self.shelf_data[key]
+            if len(self.add_keys) > 0:
+                for key in self.add_keys:
+                    shelf[key] = self.shelf_data[key]
 
-            self.shelf_data.clear()
+                self.shelf_data.clear()
 
-        if len(shelf) > 0:
-            for k, v in shelf.items():
-                self.shelf_data[k] = v
+            if len(shelf) > 0:
+                for k, v in shelf.items():
+                    self.shelf_data[k] = v
 
-        self.rem_keys.clear()
-        self.add_keys.clear()
-        shelf.close()
+            self.rem_keys.clear()
+            self.add_keys.clear()
+        finally:
+            shelf.close()
 
     def empty_shelf(self):
         shelf = shelve_lock.open(self.file)
