@@ -244,16 +244,18 @@ class JobConfig(object):
         return self.job_config['Job_Name']
 
     def trim_job_logs(self):
-        log_trimmed = False
+        logs_to_trim = []
         trim_date = datetime.datetime.now()
         trim_date = (trim_date - relativedelta.relativedelta(months=1)).__format__("%Y%m%d")
 
         for key in self.job_log.get_keys():
             if key < trim_date:
-                log_trimmed = True
-                self.job_log.del_item(key)
+                logs_to_trim.append(key)
 
-        if log_trimmed:
+        for log_item in logs_to_trim:
+            self.job_log.del_item(log_item)
+
+        if len(logs_to_trim):
             self.job_log.write_shelf()
 
     def job_log_item(self, log_item):
