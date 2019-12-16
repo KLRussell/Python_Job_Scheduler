@@ -11,6 +11,7 @@ from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import *
 
+import encodings
 import traceback
 import xml.etree.ElementTree as ET
 import pathlib as pl
@@ -265,6 +266,12 @@ class ShelfHandle:
             shutil.copy2(file, '%s_backup.bak' % self.file)
             shutil.copy2(file2, '%s_backup.dat' % self.file)
             shutil.copy2(file3, '%s_backup.dir' % self.file)
+        elif os.path.exists('%s_backup.dat' % self.file) and os.stat('%s_backup.dat' % self.file).st_size > 0\
+                and os.path.exists('%s_backup.dir' % self.file) and os.stat('%s_backup.dir' % self.file).st_size > 0\
+                and os.path.exists('%s_backup.bak' % self.file) and os.stat('%s_backup.bak' % self.file).st_size > 0:
+            shutil.copy2('%s_backup.dat' % self.file, file2)
+            shutil.copy2('%s_backup.dir' % self.file, file3)
+            shutil.copy2('%s_backup.bak' % self.file, file)
 
     def read_shelf(self):
         self.shelf_data.clear()
