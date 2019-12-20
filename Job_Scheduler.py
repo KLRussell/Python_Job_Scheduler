@@ -27,7 +27,6 @@ import sys
 import portalocker
 import atexit
 import pathlib as pl
-import psutil
 
 if getattr(sys, 'frozen', False):
     from multiprocessing import freeze_support
