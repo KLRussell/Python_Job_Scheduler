@@ -13,7 +13,9 @@ from subprocess import Popen, PIPE
 from Job_Scheduler_Settings import next_run_date
 from Job_Scheduler_Settings import add_setting
 from dateutil import relativedelta
+from win32com.client import *
 
+import pythoncom
 import smtplib
 import zipfile
 import os
@@ -25,6 +27,7 @@ import sys
 import portalocker
 import atexit
 import pathlib as pl
+import psutil
 
 if getattr(sys, 'frozen', False):
     from multiprocessing import freeze_support
@@ -39,7 +42,132 @@ joblogsdir = os.path.join(main_dir, '05_Job_Logs')
 global_objs = grabobjs(main_dir, 'Job_Scheduler')
 
 
-class Email:
+class EmailOutlook:
+    def __init__(self, job_config, job_results, attach=None, error_msg=None):
+        self.email_to = job_config['To_Distro']
+        self.email_cc = job_config['CC_Distro']
+        self.body = list()
+        self.file = attach
+
+        pythoncom.CoInitialize()
+        outlook = gencache.EnsureDispatch("Outlook.Application")
+        self.message = outlook.CreateItem(0)
+        self.body.append("Hello {0},\n".format(self.email_to.split('@')[0].title()))
+
+        if error_msg:
+            self.subject = "<Job Failed> Job \"{0}\"".format(job_config['Job_Name'])
+            sub_body = "Job \"{0}\", {1}".format(job_config['Job_Name'], error_msg)
+        else:
+            self.subject = "<Job Succeeded> Job \"{0}\"".format(job_config['Job_Name'])
+            sub_body = "Job \"{0}\" completed successfully".format(job_config['Job_Name'])
+
+        self.body.append("{0}. Total job runtime was {1}.\n"
+                         .format(sub_body, self.parse_time(job_config['Start_Time'], datetime.datetime.now())))
+        self.parse_results(job_results)
+        self.body.append("\nYour's Truly,\n")
+        self.body.append("The CDA's")
+
+    @staticmethod
+    def parse_time(start_time, end_time):
+        duration = end_time - start_time
+        duration_in_s = duration.total_seconds()
+        days = int(divmod(duration_in_s, 86400)[0])
+        hours = int(divmod(duration_in_s, 3600)[0] % 24)
+        minutes = int(divmod(duration_in_s, 60)[0] % 60)
+        seconds = int(duration.seconds % 60)
+        milliseconds = int(divmod(duration.microseconds, 1000)[0] % 1000)
+
+        date_list = []
+
+        if days > 0:
+            if days == 1:
+                date_list.append('{0} Day'.format(days))
+            else:
+                date_list.append('{0} Days'.format(days))
+
+        if hours > 0:
+            if hours == 1:
+                date_list.append('{0} Hour'.format(hours))
+            else:
+                date_list.append('{0} Hours'.format(hours))
+
+        if days < 1 and minutes > 0:
+            if minutes == 1:
+                date_list.append('{0} Minute'.format(minutes))
+            else:
+                date_list.append('{0} Minutes'.format(minutes))
+
+        if days < 1 and hours < 1 and seconds > 0:
+            if seconds == 1:
+                date_list.append('{0} Second'.format(seconds))
+            else:
+                date_list.append('{0} Seconds'.format(seconds))
+
+        if len(date_list) < 1 and milliseconds > 0:
+            if milliseconds == 1:
+                date_list.append('{0} Millisecond'.format(milliseconds))
+            else:
+                date_list.append('{0} Milliseconds'.format(milliseconds))
+
+        return ' and '.join(date_list)
+
+    def parse_results(self, job_results):
+        for sub_job_name, sub_job_type, sub_start_time, sub_end_time, sub_error in job_results:
+            if sub_end_time:
+                self.body.append('\t\u2022  {0} "{1}" <Succeeded Task> [{2}]'.format(
+                    sub_job_type, sub_job_name, self.parse_time(sub_start_time, sub_end_time)))
+            else:
+                self.body.append('\t\u2022  {0} "{1}" <Failed Task> [Err Code: {2}]'.format(sub_job_type, sub_job_name,
+                                                                                            sub_error))
+
+    def email_send(self):
+        self.message.Send()
+        return True
+
+    def email_close(self):
+        del self.message
+
+    def package_email(self):
+        self.message.To = self.email_to
+
+        if self.email_cc:
+            self.message.CC = self.email_cc
+
+        self.message.Subject = self.subject
+        self.message.Body = '\n'.join(self.body)
+
+        if self.file:
+            zip_filepath = self.zip_file()
+            self.message.Attachments.Add(zip_filepath)
+
+    def zip_file(self):
+        zip_filepath = None
+        i = 1
+
+        while not zip_filepath:
+            if i > 1:
+                zip_filepath = os.path.join(os.path.dirname(self.file), '{0}{1}.zip'.format(
+                                                     os.path.splitext(os.path.basename(self.file))[0], i))
+            else:
+                zip_filepath = os.path.join(os.path.dirname(self.file), '{0}.zip'.format(
+                    os.path.splitext(os.path.basename(self.file))[0]))
+
+            if os.path.exists(zip_filepath):
+                i += 1
+                zip_filepath = None
+
+        zip_file = zipfile.ZipFile(zip_filepath, mode='w')
+
+        try:
+            zip_file.write(self.file, os.path.basename(self.file))
+        finally:
+            zip_file.close()
+            os.remove(self.file)
+
+        return zip_filepath
+
+
+class EmailExchange:
     server = None
 
     def __init__(self, job_config, job_results, attach=None, error_msg=None):
@@ -483,8 +611,12 @@ class JobConfig(object):
 
         while email_trys < 4:
             email_trys += 1
-            obj = Email(job_config=copy.deepcopy(self.job_config), job_results=copy.deepcopy(package),
-                        attach=copy.copy(self.file_path), error_msg=copy.copy(error_msg))
+            '''
+            # This is to use Email Exchange connection (Was removed since server has low memory space)
+            
+            obj = EmailExchange(job_config=copy.deepcopy(self.job_config), job_results=copy.deepcopy(package),
+                                attach=copy.copy(self.file_path), error_msg=copy.copy(error_msg))
+                                
 
             try:
                 login = obj.email_connect()
@@ -504,6 +636,30 @@ class JobConfig(object):
                         login[1], login[2]))
                     self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}".format(
                         self.job_config['Job_Name'], login[1], login[2]))
+                    sleep(5)
+            except Exception as e:
+                self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}"
+                                  .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
+                global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
+                sleep(5)
+                pass
+            finally:
+                obj.email_close()
+                del obj
+            '''
+
+            obj = EmailOutlook(job_config=copy.deepcopy(self.job_config), job_results=copy.deepcopy(package),
+                               attach=copy.copy(self.file_path), error_msg=copy.copy(error_msg))
+
+            try:
+                obj.package_email()
+
+                if obj.email_send():
+                    self.job_log_item("Email has been successfully sent")
+                    email_trys = 5
+                else:
+                    self.job_log_item("Job '{0}' failed sending e-mail. retrying again"
+                                      .format(self.job_config['Job_Name']))
                     sleep(5)
             except Exception as e:
                 self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}"
@@ -701,7 +857,8 @@ if __name__ == '__main__':
 
                             if int(new_config['Job_Timeout'][0]) > 0 or int(new_config['Job_Timeout'][1]) > 0:
                                 timeout = datetime.datetime.now() + datetime.timedelta(
-                                    hours=int(new_config['Job_Timeout'][0]), minutes=int(new_config['Job_Timeout'][1]))
+                                    hours=int(new_config['Job_Timeout'][0]),
+                                    minutes=int(new_config['Job_Timeout'][1]))
                             else:
                                 timeout = None
 
