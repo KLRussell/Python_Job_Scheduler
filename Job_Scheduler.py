@@ -13,9 +13,8 @@ from subprocess import Popen, PIPE
 from Job_Scheduler_Settings import next_run_date
 from Job_Scheduler_Settings import add_setting
 from dateutil import relativedelta
-from win32com.client import *
+from exchangelib import Credentials, Configuration, Account, DELEGATE, FileAttachment, Message, Mailbox
 
-import pythoncom
 import smtplib
 import zipfile
 import os
@@ -41,33 +40,101 @@ joblogsdir = os.path.join(main_dir, '05_Job_Logs')
 global_objs = grabobjs(main_dir, 'Job_Scheduler')
 
 
-class EmailOutlook:
-    def __init__(self, job_config, job_results, attach=None, error_msg=None):
-        self.email_to = job_config['To_Distro']
-        self.email_cc = job_config['CC_Distro']
-        self.body = list()
-        self.file = attach
+class EmailExchange:
+    account = None
+    email = None
+    zip_file = None
 
-        pythoncom.CoInitialize()
-        outlook = gencache.EnsureDispatch("Outlook.Application")
-        self.message = outlook.CreateItem(0)
-        self.body.append("Hello {0},\n".format(self.email_to.split('@')[0].title()))
+    def __init__(self):
+        self.email_server = global_objs['Settings'].grab_item('Email_Server')
+        self.email_user = global_objs['Settings'].grab_item('Email_User')
+        self.email_pass = global_objs['Settings'].grab_item('Email_Pass')
+        self.email_from = '{0}@{1}'.format(self.email_user.decrypt_text(),
+                                           '.'.join(str(self.email_server.decrypt_text()).split('.')[1:]))
+
+    def __del__(self):
+        if self.account and hasattr(self.account, 'protocol') and hasattr(self.account.protocol, 'close'):
+            self.account.protocol.close()
+            self.account = None
+
+    def connect(self):
+        cred = Credentials(self.email_user.decrypt_text(), self.email_pass.decrypt_text())
+        conf = Configuration(server=self.email_server.decrypt_text(), credentials=cred)
+        self.account = Account(primary_smtp_address=self.email_from, config=conf, autodiscover=False,
+                               access_type=DELEGATE)
+
+    def create_email(self, job_config, job_results, attach=None, error_msg=None):
+        if self.account:
+            self.email = Message(account=self.account)
+            self.email.subject, self.email.body = self.__gen_sub_body(self.__gen_rec(job_config['To_Distro'], 'to'),
+                                                                      job_config, job_results, error_msg)
+            self.__gen_rec(job_config['CC_Distro'], 'cc')
+
+            if attach:
+                self.__zip_file(attach)
+                attach_obj = FileAttachment(name=os.path.basename(self.zip_file), content_type='zip', is_inline=False,
+                                            content=open(self.zip_file, 'rb').read())
+                self.email.attach(attach_obj)
+
+    def send_email(self):
+        if self.email and hasattr(self.email, 'send'):
+            self.email.send()
+            return True
+
+    def __gen_sub_body(self, email_to, job_config, job_results, error_msg):
+        body = list()
+        sir_names = []
+
+        for email in email_to:
+            sir_names.append(email.split('@')[0].title())
+
+        if len(sir_names) > 1:
+            sir_names[-1] = 'and %s' % sir_names[-1]
+
+        body.append("Hello {0},\n".format('; '.join(sir_names)))
 
         if error_msg:
-            self.subject = "<Job Failed> Job \"{0}\"".format(job_config['Job_Name'])
+            subject = "<Job Failed> Job \"{0}\"".format(job_config['Job_Name'])
             sub_body = "Job \"{0}\", {1}".format(job_config['Job_Name'], error_msg)
         else:
-            self.subject = "<Job Succeeded> Job \"{0}\"".format(job_config['Job_Name'])
+            subject = "<Job Succeeded> Job \"{0}\"".format(job_config['Job_Name'])
             sub_body = "Job \"{0}\" completed successfully".format(job_config['Job_Name'])
 
-        self.body.append("{0}. Total job runtime was {1}.\n"
-                         .format(sub_body, self.parse_time(job_config['Start_Time'], datetime.datetime.now())))
-        self.parse_results(job_results)
-        self.body.append("\nYour's Truly,\n")
-        self.body.append("The CDA's")
+        body.append("{0}. Total job runtime was {1}.\n"
+                    .format(sub_body, self.__parse_time(job_config['Start_Time'], datetime.datetime.now())))
+
+        for sub_job_name, sub_job_type, sub_start_time, sub_end_time, sub_error in job_results:
+            if sub_end_time:
+                body.append('\t\u2022  {0} "{1}" <Succeeded Task> [{2}]'.format(
+                    sub_job_type, sub_job_name, self.__parse_time(sub_start_time, sub_end_time)))
+            else:
+                body.append('\t\u2022  {0} "{1}" <Failed Task> [Err Code: {2}]'.format(sub_job_type, sub_job_name,
+                                                                                       sub_error))
+
+        body.append("\nYour's Truly,\n")
+        body.append("The CDA's")
+
+        return [subject, '\n'.join(body)]
+
+    def __gen_rec(self, rec_str, rec_type):
+        if rec_str and rec_type and rec_type in ('to', 'cc', 'bcc'):
+            rec_objs = []
+            recs = rec_str.replace(' ', '').replace(';', ',').split(',')
+
+            for rec in recs:
+                rec_objs.append(Mailbox(email_address=rec))
+
+            if rec_type == 'to':
+                self.email.to_recipients = rec_objs
+            elif rec_type == 'cc':
+                self.email.cc_recipients = rec_objs
+            elif rec_type == 'bcc':
+                self.email.to_recipients = rec_objs
+
+            return recs
 
     @staticmethod
-    def parse_time(start_time, end_time):
+    def __parse_time(start_time, end_time):
         duration = end_time - start_time
         duration_in_s = duration.total_seconds()
         days = int(divmod(duration_in_s, 86400)[0])
@@ -110,46 +177,17 @@ class EmailOutlook:
 
         return ' and '.join(date_list)
 
-    def parse_results(self, job_results):
-        for sub_job_name, sub_job_type, sub_start_time, sub_end_time, sub_error in job_results:
-            if sub_end_time:
-                self.body.append('\t\u2022  {0} "{1}" <Succeeded Task> [{2}]'.format(
-                    sub_job_type, sub_job_name, self.parse_time(sub_start_time, sub_end_time)))
-            else:
-                self.body.append('\t\u2022  {0} "{1}" <Failed Task> [Err Code: {2}]'.format(sub_job_type, sub_job_name,
-                                                                                            sub_error))
-
-    def email_send(self):
-        self.message.Send()
-        return True
-
-    def email_close(self):
-        del self.message
-
-    def package_email(self):
-        self.message.To = self.email_to
-
-        if self.email_cc:
-            self.message.CC = self.email_cc
-
-        self.message.Subject = self.subject
-        self.message.Body = '\n'.join(self.body)
-
-        if self.file:
-            zip_filepath = self.zip_file()
-            self.message.Attachments.Add(zip_filepath)
-
-    def zip_file(self):
+    def __zip_file(self, file):
         zip_filepath = None
-        i = 1
+        i = 0
 
         while not zip_filepath:
             if i > 1:
-                zip_filepath = os.path.join(os.path.dirname(self.file), '{0}{1}.zip'.format(
-                                                     os.path.splitext(os.path.basename(self.file))[0], i))
+                zip_filepath = os.path.join(os.path.dirname(file), '{0}{1}.zip'.format(
+                                                     os.path.splitext(os.path.basename(file))[0], i))
             else:
-                zip_filepath = os.path.join(os.path.dirname(self.file), '{0}.zip'.format(
-                    os.path.splitext(os.path.basename(self.file))[0]))
+                zip_filepath = os.path.join(os.path.dirname(file), '{0}.zip'.format(
+                    os.path.splitext(os.path.basename(file))[0]))
 
             if os.path.exists(zip_filepath):
                 i += 1
@@ -158,15 +196,15 @@ class EmailOutlook:
         zip_file = zipfile.ZipFile(zip_filepath, mode='w')
 
         try:
-            zip_file.write(self.file, os.path.basename(self.file))
+            zip_file.write(file, os.path.basename(file))
         finally:
             zip_file.close()
-            os.remove(self.file)
+            os.remove(file)
 
-        return zip_filepath
+        self.zip_file = zip_filepath
 
 
-class EmailExchange:
+class EmailSMTP:
     server = None
 
     def __init__(self, job_config, job_results, attach=None, error_msg=None):
@@ -176,13 +214,29 @@ class EmailExchange:
         self.email_pass = global_objs['Settings'].grab_item('Email_Pass')
         self.email_from = '{0}@{1}'.format(self.email_user.decrypt_text(),
                                            '.'.join(str(self.email_server.decrypt_text()).split('.')[1:]))
+
         self.email_to = job_config['To_Distro']
         self.email_cc = job_config['CC_Distro']
+
+        if self.email_to and self.email_to.find(';'):
+            self.email_to = self.email_to.replace(';', ',')
+
+        if self.email_cc and self.email_cc.find(';'):
+            self.email_cc = self.email_cc.replace(';', ',')
+
+        if self.email_to.find(','):
+            sir_names = []
+
+            for email in self.email_to.split(','):
+                sir_names.append(email.split('@')[0].title())
+        else:
+            sir_names = [self.email_to.split('@')[0].title()]
+
         self.server = None
         self.message = MIMEMultipart()
         self.body = list()
         self.file = attach
-        self.body.append("Hello {0},\n".format(self.email_to.split('@')[0].title()))
+        self.body.append("Hello {0},\n".format(';'.join(sir_names)))
 
         if error_msg:
             self.subject = "<Job Failed> Job \"{0}\"".format(job_config['Job_Name'])
@@ -283,7 +337,9 @@ class EmailExchange:
                 del self.server
 
     def package_email(self):
-        self.message['To'] = self.email_to
+        if self.email_to:
+            self.message['To'] = self.email_to
+
         self.message['Date'] = formatdate(localtime=True)
 
         if self.email_cc:
@@ -610,12 +666,12 @@ class JobConfig(object):
 
         while email_trys < 4:
             email_trys += 1
+
             '''
             # This is to use Email Exchange connection (Was removed since server has low memory space)
             
-            obj = EmailExchange(job_config=copy.deepcopy(self.job_config), job_results=copy.deepcopy(package),
+            obj = EmailSMTP(job_config=copy.deepcopy(self.job_config), job_results=copy.deepcopy(package),
                                 attach=copy.copy(self.file_path), error_msg=copy.copy(error_msg))
-                                
 
             try:
                 login = obj.email_connect()
@@ -646,14 +702,16 @@ class JobConfig(object):
                 obj.email_close()
                 del obj
             '''
+            # This is to use Exchange Server Session connection to send emails
 
-            obj = EmailOutlook(job_config=copy.deepcopy(self.job_config), job_results=copy.deepcopy(package),
-                               attach=copy.copy(self.file_path), error_msg=copy.copy(error_msg))
+            obj = EmailExchange()
 
             try:
-                obj.package_email()
+                obj.connect()
+                obj.create_email(job_config=copy.deepcopy(self.job_config), job_results=copy.deepcopy(package),
+                                 attach=copy.copy(self.file_path), error_msg=copy.copy(error_msg))
 
-                if obj.email_send():
+                if obj.send_email():
                     self.job_log_item("Email has been successfully sent")
                     email_trys = 5
                 else:
@@ -667,7 +725,6 @@ class JobConfig(object):
                 sleep(5)
                 pass
             finally:
-                obj.email_close()
                 del obj
 
     def close_conn(self):

@@ -11,7 +11,6 @@ from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import *
 
-import encodings
 import traceback
 import xml.etree.ElementTree as ET
 import pathlib as pl
