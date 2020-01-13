@@ -53,17 +53,24 @@ class EmailExchange:
                                            '.'.join(str(self.email_server.decrypt_text()).split('.')[1:]))
 
     def __del__(self):
+        self.close_conn()
+
+    def close_conn(self):
         if self.account and hasattr(self.account, 'protocol') and hasattr(self.account.protocol, 'close'):
             self.account.protocol.close()
             self.account = None
 
     def connect(self):
-        cred = Credentials(self.email_user.decrypt_text(), self.email_pass.decrypt_text())
-        conf = Configuration(server=self.email_server.decrypt_text(), credentials=cred)
-        self.account = Account(primary_smtp_address=self.email_from, config=conf, autodiscover=False,
-                               access_type=DELEGATE)
+        if not self.account:
+            cred = Credentials(self.email_user.decrypt_text(), self.email_pass.decrypt_text())
+            conf = Configuration(server=self.email_server.decrypt_text(), credentials=cred)
+            self.account = Account(primary_smtp_address=self.email_from, config=conf, autodiscover=False,
+                                   access_type=DELEGATE)
 
     def create_email(self, job_config, job_results, attach=None, error_msg=None):
+        self.email = None
+        self.zip_file = None
+
         if self.account:
             self.email = Message(account=self.account)
             self.email.subject, self.email.body = self.__gen_sub_body(self.__gen_rec(job_config['To_Distro'], 'to'),
@@ -390,7 +397,7 @@ class EmailSMTP:
 
 
 class JobConfig(object):
-    def __init__(self, job_config, time_out):
+    def __init__(self, eobj, job_config, time_out):
         self.sub_job_name = []
         self.sub_job_type = []
         self.job_files = []
@@ -404,6 +411,7 @@ class JobConfig(object):
         self.job_log = ShelfHandle(os.path.join(joblogsdir, job_config['Job_Name']))
         self.job_log.read_shelf()
         self.time_out = time_out
+        self.email_obj = eobj
         self.trim_job_logs()
 
     def close_job(self):
@@ -704,28 +712,27 @@ class JobConfig(object):
             '''
             # This is to use Exchange Server Session connection to send emails
 
-            obj = EmailExchange()
-
             try:
-                obj.connect()
-                obj.create_email(job_config=copy.deepcopy(self.job_config), job_results=copy.deepcopy(package),
-                                 attach=copy.copy(self.file_path), error_msg=copy.copy(error_msg))
+                self.email_obj.connect()
+                self.email_obj.create_email(job_config=copy.deepcopy(self.job_config),
+                                            job_results=copy.deepcopy(package), attach=copy.copy(self.file_path),
+                                            error_msg=copy.copy(error_msg))
 
-                if obj.send_email():
+                if self.email_obj.send_email():
                     self.job_log_item("Email has been successfully sent")
                     email_trys = 5
                 else:
+                    self.email_obj.close_conn()
                     self.job_log_item("Job '{0}' failed sending e-mail. retrying again"
                                       .format(self.job_config['Job_Name']))
                     sleep(5)
             except Exception as e:
+                self.email_obj.close_conn()
                 self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}"
                                   .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
                 global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
                 sleep(5)
                 pass
-            finally:
-                del obj
 
     def close_conn(self):
         if self.asql:
@@ -844,7 +851,7 @@ def watch_jobs(job_thread, job_obj, job_timeout):
         jw.start()
         return True
     elif job_timeout and job_timeout < datetime.datetime.now():
-        global_objs['Event_Log'].write_log("Failed execution because of Time-Out!")
+        global_objs['Event_Log'].write_log("Job '%s' Failed execution because of Time-Out!" % job_obj.job_name())
 
         if job_thread.is_alive():
             job_thread.terminate()
@@ -893,8 +900,10 @@ if __name__ == '__main__':
 
         try:
             BaseManager.register('JobConfig', JobConfig)
+            BaseManager.register('EmailExchange', EmailExchange)
             manager = BaseManager()
             manager.start()
+            email_obj = EmailExchange()
             global_objs['Event_Log'].write_log("Job Scheduler is now sniffing for Jobs to execute")
 
             while 1 != 0:
@@ -919,7 +928,7 @@ if __name__ == '__main__':
                                 timeout = None
 
                             new_config['Start_Time'] = datetime.datetime.now()
-                            myobj = manager.JobConfig(new_config, timeout)
+                            myobj = manager.JobConfig(email_obj, new_config, timeout)
                             configs[line] = new_config
                             j = Process(target=exec_job, args=[myobj])
                             j.daemon = True
