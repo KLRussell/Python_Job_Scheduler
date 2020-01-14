@@ -67,6 +67,7 @@ class EmailExchange:
             self.close_conn()
 
         if not self.account:
+            self.session_start = datetime.datetime.now()
             cred = Credentials(self.email_user.decrypt_text(), self.email_pass.decrypt_text())
             conf = Configuration(server=self.email_server.decrypt_text(), credentials=cred)
             self.account = Account(primary_smtp_address=self.email_from, config=conf, autodiscover=False,
