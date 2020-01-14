@@ -41,6 +41,7 @@ global_objs = grabobjs(main_dir, 'Job_Scheduler')
 
 
 class EmailExchange:
+    session_start = None
     account = None
     email = None
     zip_file = None
@@ -58,9 +59,13 @@ class EmailExchange:
     def close_conn(self):
         if self.account and hasattr(self.account, 'protocol') and hasattr(self.account.protocol, 'close'):
             self.account.protocol.close()
-            self.account = None
+
+        self.account = None
 
     def connect(self):
+        if self.session_start and (datetime.datetime.now() - self.session_start).total_seconds() > 60:
+            self.close_conn()
+
         if not self.account:
             cred = Credentials(self.email_user.decrypt_text(), self.email_pass.decrypt_text())
             conf = Configuration(server=self.email_server.decrypt_text(), credentials=cred)
@@ -713,11 +718,13 @@ class JobConfig(object):
             # This is to use Exchange Server Session connection to send emails
 
             try:
+                self.job_log_item("Email connecting session to Exchange")
                 self.email_obj.connect()
+                self.job_log_item("Generating e-mail draft")
                 self.email_obj.create_email(job_config=copy.deepcopy(self.job_config),
                                             job_results=copy.deepcopy(package), attach=copy.copy(self.file_path),
                                             error_msg=copy.copy(error_msg))
-
+                self.job_log_item("Attempting sending of e-mail")
                 if self.email_obj.send_email():
                     self.job_log_item("Email has been successfully sent")
                     email_trys = 5
