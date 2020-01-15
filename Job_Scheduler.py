@@ -13,7 +13,7 @@ from subprocess import Popen, PIPE
 from Job_Scheduler_Settings import next_run_date
 from Job_Scheduler_Settings import add_setting
 from dateutil import relativedelta
-from exchangelib import Credentials, Configuration, Account, DELEGATE, FileAttachment, Message, Mailbox
+from exchangelib import Credentials, Configuration, Account, DELEGATE, FileAttachment, Message, Mailbox, EWSTimeZone
 
 import smtplib
 import zipfile
@@ -41,7 +41,6 @@ global_objs = grabobjs(main_dir, 'Job_Scheduler')
 
 
 class EmailExchange:
-    session_start = None
     account = None
     email = None
     zip_file = None
@@ -63,15 +62,17 @@ class EmailExchange:
         self.account = None
 
     def connect(self):
-        if self.session_start and (datetime.datetime.now() - self.session_start).total_seconds() > 60:
-            self.close_conn()
-
         if not self.account:
-            self.session_start = datetime.datetime.now()
             cred = Credentials(self.email_user.decrypt_text(), self.email_pass.decrypt_text())
             conf = Configuration(server=self.email_server.decrypt_text(), credentials=cred)
             self.account = Account(primary_smtp_address=self.email_from, config=conf, autodiscover=False,
-                                   access_type=DELEGATE)
+                                   access_type=DELEGATE, default_timezone=EWSTimeZone.localzone())
+
+    def keep_alive(self):
+        if self.account:
+            self.account.root.refresh()
+        else:
+            self.connect()
 
     def create_email(self, job_config, job_results, attach=None, error_msg=None):
         self.email = None
@@ -902,6 +903,7 @@ if __name__ == '__main__':
     global_objs['Event_Log'].write_log("Initializing Job Scheduler Settings")
 
     if check_settings():
+        erefresh_counter = 0
         script_started = True
         jw_thread = None
         stop_job_list = []
@@ -956,6 +958,12 @@ if __name__ == '__main__':
                                 jobs.remove(my_job)
 
                 sleep(10)
+
+                if erefresh_counter < 30:
+                    erefresh_counter += 1
+                else:
+                    erefresh_counter = 0
+                    email_obj.keep_alive()
         except:
             global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
         finally:
