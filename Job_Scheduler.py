@@ -1,11 +1,6 @@
 from Global import grabobjs
 from Global import ShelfHandle
 from Global import SQLHandle
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email.mime.text import MIMEText
-from email.utils import formatdate
-from email import encoders
 from time import sleep
 from multiprocessing import Process
 from multiprocessing.managers import BaseManager
@@ -13,10 +8,8 @@ from subprocess import Popen, PIPE
 from Job_Scheduler_Settings import next_run_date
 from Job_Scheduler_Settings import add_setting
 from dateutil import relativedelta
-from exchangelib import Credentials, Configuration, Account, DELEGATE, FileAttachment, Message, Mailbox, EWSTimeZone,\
-    EWSDateTime
+from exchangelib import Credentials, Configuration, Account, DELEGATE, FileAttachment, Message, Mailbox
 
-import smtplib
 import zipfile
 import os
 import pandas as pd
@@ -86,9 +79,11 @@ class EmailExchange:
 
             if attach:
                 self.__zip_file(attach)
-                attach_obj = FileAttachment(name=os.path.basename(self.zip_file), content_type='zip', is_inline=False,
-                                            content=open(self.zip_file, 'rb').read())
-                self.email.attach(attach_obj)
+
+                if self.zip_file:
+                    attach_obj = FileAttachment(name=os.path.basename(self.zip_file), content_type='zip',
+                                                is_inline=False, content=open(self.zip_file, 'rb').read())
+                    self.email.attach(attach_obj)
 
     def send_email(self):
         if self.email and hasattr(self.email, 'send'):
@@ -656,7 +651,7 @@ def watch_jobs(job_thread, job_obj, job_timeout):
 
 def attach_cleanup():
     for file in list(pl.Path(batcheddir).glob('*.xlsx')):
-        os.remove(file)
+        os.remove(str(file))
 
 
 def exit_handler(jobs_to_kill):
