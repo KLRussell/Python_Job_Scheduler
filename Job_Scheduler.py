@@ -13,7 +13,8 @@ from subprocess import Popen, PIPE
 from Job_Scheduler_Settings import next_run_date
 from Job_Scheduler_Settings import add_setting
 from dateutil import relativedelta
-from exchangelib import Credentials, Configuration, Account, DELEGATE, FileAttachment, Message, Mailbox, EWSTimeZone
+from exchangelib import Credentials, Configuration, Account, DELEGATE, FileAttachment, Message, Mailbox, EWSTimeZone,\
+    EWSDateTime
 
 import smtplib
 import zipfile
@@ -51,11 +52,9 @@ class EmailExchange:
         self.email_pass = global_objs['Settings'].grab_item('Email_Pass')
         self.email_from = '{0}@{1}'.format(self.email_user.decrypt_text(),
                                            '.'.join(str(self.email_server.decrypt_text()).split('.')[1:]))
+        self.connect()
 
-    def __del__(self):
-        self.close_conn()
-
-    def close_conn(self):
+    def close_email_conn(self):
         if self.account and hasattr(self.account, 'protocol') and hasattr(self.account.protocol, 'close'):
             self.account.protocol.close()
 
@@ -66,12 +65,13 @@ class EmailExchange:
             cred = Credentials(self.email_user.decrypt_text(), self.email_pass.decrypt_text())
             conf = Configuration(server=self.email_server.decrypt_text(), credentials=cred)
             self.account = Account(primary_smtp_address=self.email_from, config=conf, autodiscover=False,
-                                   access_type=DELEGATE, default_timezone=EWSTimeZone.localzone())
+                                   access_type=DELEGATE)
 
     def keep_alive(self):
-        if self.account:
+        if self.account and hasattr(self.account, 'root') and hasattr(self.account.root, 'refresh'):
             self.account.root.refresh()
         else:
+            self.close_email_conn()
             self.connect()
 
     def create_email(self, job_config, job_results, attach=None, error_msg=None):
@@ -218,197 +218,16 @@ class EmailExchange:
         self.zip_file = zip_filepath
 
 
-class EmailSMTP:
-    server = None
-
-    def __init__(self, job_config, job_results, attach=None, error_msg=None):
-        self.email_server = global_objs['Settings'].grab_item('Email_Server')
-        self.email_port = global_objs['Settings'].grab_item('Email_Port')
-        self.email_user = global_objs['Settings'].grab_item('Email_User')
-        self.email_pass = global_objs['Settings'].grab_item('Email_Pass')
-        self.email_from = '{0}@{1}'.format(self.email_user.decrypt_text(),
-                                           '.'.join(str(self.email_server.decrypt_text()).split('.')[1:]))
-
-        self.email_to = job_config['To_Distro']
-        self.email_cc = job_config['CC_Distro']
-
-        if self.email_to and self.email_to.find(';'):
-            self.email_to = self.email_to.replace(';', ',')
-
-        if self.email_cc and self.email_cc.find(';'):
-            self.email_cc = self.email_cc.replace(';', ',')
-
-        if self.email_to.find(','):
-            sir_names = []
-
-            for email in self.email_to.split(','):
-                sir_names.append(email.split('@')[0].title())
-        else:
-            sir_names = [self.email_to.split('@')[0].title()]
-
-        self.server = None
-        self.message = MIMEMultipart()
-        self.body = list()
-        self.file = attach
-        self.body.append("Hello {0},\n".format(';'.join(sir_names)))
-
-        if error_msg:
-            self.subject = "<Job Failed> Job \"{0}\"".format(job_config['Job_Name'])
-            sub_body = "Job \"{0}\", {1}".format(job_config['Job_Name'], error_msg)
-        else:
-            self.subject = "<Job Succeeded> Job \"{0}\"".format(job_config['Job_Name'])
-            sub_body = "Job \"{0}\" completed successfully".format(job_config['Job_Name'])
-
-        self.body.append("{0}. Total job runtime was {1}.\n"
-                         .format(sub_body, self.parse_time(job_config['Start_Time'], datetime.datetime.now())))
-        self.parse_results(job_results)
-        self.body.append("\nYour's Truly,\n")
-        self.body.append("The CDA's")
-        self.email_close()
-
-    @staticmethod
-    def parse_time(start_time, end_time):
-        duration = end_time - start_time
-        duration_in_s = duration.total_seconds()
-        days = int(divmod(duration_in_s, 86400)[0])
-        hours = int(divmod(duration_in_s, 3600)[0] % 24)
-        minutes = int(divmod(duration_in_s, 60)[0] % 60)
-        seconds = int(duration.seconds % 60)
-        milliseconds = int(divmod(duration.microseconds, 1000)[0] % 1000)
-
-        date_list = []
-
-        if days > 0:
-            if days == 1:
-                date_list.append('{0} Day'.format(days))
-            else:
-                date_list.append('{0} Days'.format(days))
-
-        if hours > 0:
-            if hours == 1:
-                date_list.append('{0} Hour'.format(hours))
-            else:
-                date_list.append('{0} Hours'.format(hours))
-
-        if days < 1 and minutes > 0:
-            if minutes == 1:
-                date_list.append('{0} Minute'.format(minutes))
-            else:
-                date_list.append('{0} Minutes'.format(minutes))
-
-        if days < 1 and hours < 1 and seconds > 0:
-            if seconds == 1:
-                date_list.append('{0} Second'.format(seconds))
-            else:
-                date_list.append('{0} Seconds'.format(seconds))
-
-        if len(date_list) < 1 and milliseconds > 0:
-            if milliseconds == 1:
-                date_list.append('{0} Millisecond'.format(milliseconds))
-            else:
-                date_list.append('{0} Milliseconds'.format(milliseconds))
-
-        return ' and '.join(date_list)
-
-    def parse_results(self, job_results):
-        for sub_job_name, sub_job_type, sub_start_time, sub_end_time, sub_error in job_results:
-            if sub_end_time:
-                self.body.append('\t\u2022  {0} "{1}" <Succeeded Task> [{2}]'.format(
-                    sub_job_type, sub_job_name, self.parse_time(sub_start_time, sub_end_time)))
-            else:
-                self.body.append('\t\u2022  {0} "{1}" <Failed Task> [Err Code: {2}]'.format(sub_job_type, sub_job_name,
-                                                                                            sub_error))
-
-    def email_connect(self):
-        try:
-            self.server = smtplib.SMTP(str(self.email_server.decrypt_text()), int(self.email_port.decrypt_text()))
-
-            try:
-                self.server.ehlo()
-                self.server.starttls()
-                self.server.ehlo()
-                self.server.login(self.email_user.decrypt_text(), self.email_pass.decrypt_text())
-            except Exception as e:
-                self.email_close()
-                return [False, type(e).__name__, str(e)]
-            else:
-                return [True, None, None]
-        except Exception as e:
-            return [False, type(e).__name__, str(e)]
-
-    def email_send(self):
-        if self.server and hasattr(self.server, 'sendmail'):
-            self.server.sendmail(self.email_from, self.email_to, str(self.message))
-            return True
-
-    def email_close(self):
-        if self.server:
-            try:
-                self.server.quit()
-            except:
-                pass
-            finally:
-                del self.server
-
-    def package_email(self):
-        if self.email_to:
-            self.message['To'] = self.email_to
-
-        self.message['Date'] = formatdate(localtime=True)
-
-        if self.email_cc:
-            self.message['Cc'] = self.email_cc
-
-        self.message['Subject'] = self.subject
-        self.message.attach(MIMEText('\n'.join(self.body)))
-
-        if self.file:
-            part = MIMEBase('application', "octet-stream")
-            zip_filepath = self.zip_file()
-            zf = open(zip_filepath, 'rb')
-
-            try:
-                part.set_payload(zf.read())
-                encoders.encode_base64(part)
-                part.add_header('Content-Disposition', 'attachment; filename="{0}"'.format(
-                    os.path.basename(zip_filepath)))
-                self.message.attach(part)
-            finally:
-                zf.close()
-
-    def zip_file(self):
-        zip_filepath = None
-        i = 1
-
-        while not zip_filepath:
-            if i > 1:
-                zip_filepath = os.path.join(os.path.dirname(self.file), '{0}{1}.zip'.format(
-                                                     os.path.splitext(os.path.basename(self.file))[0], i))
-            else:
-                zip_filepath = os.path.join(os.path.dirname(self.file), '{0}.zip'.format(
-                    os.path.splitext(os.path.basename(self.file))[0]))
-
-            if os.path.exists(zip_filepath):
-                i += 1
-                zip_filepath = None
-
-        zip_file = zipfile.ZipFile(zip_filepath, mode='w')
-
-        try:
-            zip_file.write(self.file, os.path.basename(self.file))
-        finally:
-            zip_file.close()
-            os.remove(self.file)
-
-        return zip_filepath
+email_obj = EmailExchange()
 
 
 class JobConfig(object):
-    def __init__(self, eobj, job_config, time_out):
+    def __init__(self, job_config, time_out):
         self.sub_job_name = []
         self.sub_job_type = []
         self.job_files = []
         self.file_path = None
+        self.email_obj = None
         self.sub_start_time = []
         self.sub_end_time = []
         self.sub_error = []
@@ -418,8 +237,11 @@ class JobConfig(object):
         self.job_log = ShelfHandle(os.path.join(joblogsdir, job_config['Job_Name']))
         self.job_log.read_shelf()
         self.time_out = time_out
-        self.email_obj = eobj
         self.trim_job_logs()
+
+    def clean_eobj(self):
+        if self.email_obj:
+            del self.email_obj
 
     def close_job(self):
         fconfig = None
@@ -682,61 +504,21 @@ class JobConfig(object):
         while email_trys < 4:
             email_trys += 1
 
-            '''
-            # This is to use Email Exchange connection (Was removed since server has low memory space)
-            
-            obj = EmailSMTP(job_config=copy.deepcopy(self.job_config), job_results=copy.deepcopy(package),
-                                attach=copy.copy(self.file_path), error_msg=copy.copy(error_msg))
-
             try:
-                login = obj.email_connect()
-
-                if login[0]:
-                    obj.package_email()
-
-                    if obj.email_send():
-                        self.job_log_item("Email has been successfully sent")
-                        email_trys = 5
-                    else:
-                        self.job_log_item("Job '{0}' failed sending e-mail. retrying again"
-                                          .format(self.job_config['Job_Name']))
-                        sleep(5)
-                else:
-                    global_objs['Event_Log'].write_log('Failed e-mail connection [ECode {0}] - {1}'.format(
-                        login[1], login[2]))
-                    self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}".format(
-                        self.job_config['Job_Name'], login[1], login[2]))
-                    sleep(5)
-            except Exception as e:
-                self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}"
-                                  .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
-                global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
-                sleep(5)
-                pass
-            finally:
-                obj.email_close()
-                del obj
-            '''
-            # This is to use Exchange Server Session connection to send emails
-
-            try:
-                self.job_log_item("Email connecting session to Exchange")
-                self.email_obj.connect()
                 self.job_log_item("Generating e-mail draft")
-                self.email_obj.create_email(job_config=copy.deepcopy(self.job_config),
-                                            job_results=copy.deepcopy(package), attach=copy.copy(self.file_path),
-                                            error_msg=copy.copy(error_msg))
+                email_obj.create_email(job_config=copy.deepcopy(self.job_config),
+                                       job_results=copy.deepcopy(package), attach=copy.copy(self.file_path),
+                                       error_msg=copy.copy(error_msg))
                 self.job_log_item("Attempting sending of e-mail")
-                if self.email_obj.send_email():
+
+                if email_obj.send_email():
                     self.job_log_item("Email has been successfully sent")
                     email_trys = 5
                 else:
-                    self.email_obj.close_conn()
                     self.job_log_item("Job '{0}' failed sending e-mail. retrying again"
                                       .format(self.job_config['Job_Name']))
                     sleep(5)
             except Exception as e:
-                self.email_obj.close_conn()
                 self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}"
                                   .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
                 global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
@@ -812,6 +594,7 @@ def exec_job(class_obj):
 def exec_email(class_obj, err_msg):
     if class_obj:
         try:
+            class_obj.clean_eobj()
             class_obj.export_files()
             class_obj.send_email(error_msg=err_msg)
         finally:
@@ -910,7 +693,6 @@ if __name__ == '__main__':
 
         try:
             BaseManager.register('JobConfig', JobConfig)
-            BaseManager.register('EmailExchange', EmailExchange)
             manager = BaseManager()
             manager.start()
             email_obj = EmailExchange()
@@ -938,7 +720,7 @@ if __name__ == '__main__':
                                 timeout = None
 
                             new_config['Start_Time'] = datetime.datetime.now()
-                            myobj = manager.JobConfig(email_obj, new_config, timeout)
+                            myobj = manager.JobConfig(new_config, timeout)
                             configs[line] = new_config
                             j = Process(target=exec_job, args=[myobj])
                             j.daemon = True
@@ -959,7 +741,7 @@ if __name__ == '__main__':
 
                 sleep(10)
 
-                if erefresh_counter < 30:
+                if erefresh_counter < 7:
                     erefresh_counter += 1
                 else:
                     erefresh_counter = 0
