@@ -47,6 +47,12 @@ class EmailExchange:
                                            '.'.join(str(self.email_server.decrypt_text()).split('.')[1:]))
         self.connect()
 
+    def renew_session(self):
+        session = self.account.protocol.get_session()
+
+        if session:
+            self.account.protocol._session_pool.put(self.account.protocol.renew_session(session), block=False)
+
     def close_email_conn(self):
         if self.account and hasattr(self.account, 'protocol') and hasattr(self.account.protocol, 'close'):
             self.account.protocol.close()
@@ -517,7 +523,9 @@ class JobConfig(object):
                 self.job_log_item("Job '{0}' failed sending e-mail [ECode {1}] - {2}"
                                   .format(self.job_config['Job_Name'], type(e).__name__, str(e)))
                 global_objs['Event_Log'].write_log(traceback.format_exc(), 'critical')
-                sleep(5)
+                global_objs['Event_Log'].write_log('Renewing e-mail server session in 1 minute', 'warning')
+                sleep(60)
+                email_obj.renew_session()
                 pass
 
     def close_conn(self):
