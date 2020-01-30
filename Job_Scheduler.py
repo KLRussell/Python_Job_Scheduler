@@ -51,7 +51,7 @@ class EmailExchange:
         session = self.account.protocol.get_session()
 
         if session:
-            self.account.protocol._session_pool.put(self.account.protocol.renew_session(session), block=False)
+            self.account.protocol.retire_session(session)
 
     def close_email_conn(self):
         if self.account and hasattr(self.account, 'protocol') and hasattr(self.account.protocol, 'close'):
